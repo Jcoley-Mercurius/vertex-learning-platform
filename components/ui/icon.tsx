@@ -114,6 +114,30 @@ const glyphs = {
       </>
     ),
   },
+  "arrow-right": {
+    outline: (
+      <>
+        <path d="M4 12h16" />
+        <path d="m14 6 6 6-6 6" />
+      </>
+    ),
+  },
+  star: {
+    outline: (
+      <path d="m12 3.5 2.6 5.4 5.9.8-4.3 4.2 1 5.9-5.2-2.8-5.2 2.8 1-5.9L3.5 9.7l5.9-.8z" />
+    ),
+    filled: (
+      <path d="m12 3.5 2.6 5.4 5.9.8-4.3 4.2 1 5.9-5.2-2.8-5.2 2.8 1-5.9L3.5 9.7l5.9-.8z" />
+    ),
+  },
+  file: {
+    outline: (
+      <>
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <path d="M14 2v6h6" />
+      </>
+    ),
+  },
   "chevron-right": { outline: <path d="m9 18 6-6-6-6" /> },
   "chevron-left": { outline: <path d="m15 18-6-6 6-6" /> },
   "chevron-down": { outline: <path d="m6 9 6 6 6-6" /> },

@@ -1,13 +1,17 @@
+import Link from "next/link";
 import type { HTMLAttributes, ReactNode } from "react";
 import { cn } from "./cn";
 import { Badge } from "./badge";
 import { Icon } from "./icon";
 
-export type CardProps = HTMLAttributes<HTMLDivElement>;
+export type CardProps = HTMLAttributes<HTMLDivElement> & {
+  /** Element to render. Use `article` when the card is standalone content. */
+  as?: "div" | "article";
+};
 
-export function Card({ className, ...props }: CardProps) {
+export function Card({ as: Tag = "div", className, ...props }: CardProps) {
   return (
-    <div
+    <Tag
       className={cn(
         "rounded-lg border border-neutral-200 bg-white p-5 shadow-sm",
         className,
@@ -32,6 +36,8 @@ export function CourseCard({
   duration,
   modules,
   icon,
+  orientation = "inline",
+  href,
   className,
 }: {
   title: string;
@@ -41,20 +47,54 @@ export function CourseCard({
   modules: string;
   /** Square course glyph. Defaults to the course initial. */
   icon?: ReactNode;
+  /** `stacked` puts the glyph above a display-face title, as the home page shows it. */
+  orientation?: "inline" | "stacked";
+  /** When set, the whole card becomes a link to the course. */
+  href?: string;
   className?: string;
 }) {
-  return (
-    <Card className={className}>
-      <div className="flex items-start gap-4">
-        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-sm bg-neutral-900 text-heading-2 font-semibold text-white">
-          {icon ?? title.charAt(0)}
-        </span>
-        <div className="min-w-0">
-          <h3 className="text-heading-3 font-semibold text-neutral-900">{title}</h3>
-          <p className="mt-1 text-body text-neutral-500">{description}</p>
+  const stacked = orientation === "stacked";
+
+  const glyph = (
+    <span
+      className={cn(
+        "flex shrink-0 items-center justify-center",
+        icon
+          ? "h-18 w-18"
+          : "h-12 w-12 rounded-sm bg-neutral-900 text-heading-2 font-semibold text-white",
+      )}
+    >
+      {icon ?? title.charAt(0)}
+    </span>
+  );
+
+  const body = (
+    <>
+      {stacked ? (
+        <>
+          {glyph}
+          <h3 className="mt-8 font-display text-heading-2 font-medium text-neutral-900">
+            {title}
+          </h3>
+          <p className="mt-3 text-body text-neutral-500">{description}</p>
+        </>
+      ) : (
+        <div className="flex items-start gap-4">
+          {glyph}
+          <div className="min-w-0">
+            <h3 className="text-heading-3 font-semibold text-neutral-900">{title}</h3>
+            <p className="mt-1 text-body text-neutral-500">{description}</p>
+          </div>
         </div>
-      </div>
-      <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 text-body text-neutral-500">
+      )}
+      <div
+        className={cn(
+          "flex flex-wrap items-center gap-x-6 gap-y-2 text-body text-neutral-500",
+          stacked
+            ? "mt-auto border-t border-neutral-200 pt-4"
+            : "mt-6",
+        )}
+      >
         <span className="inline-flex items-center gap-2">
           <Icon name="bar-chart" variant="filled" size={18} />
           {level}
@@ -64,10 +104,41 @@ export function CourseCard({
           {duration}
         </span>
         <span className="inline-flex items-center gap-2">
-          <Icon name="folder" size={18} />
+          <Icon name={stacked ? "file" : "folder"} size={18} />
           {modules}
         </span>
       </div>
+    </>
+  );
+
+  const cardClassName = cn(
+    stacked ? "flex h-full flex-col p-8" : undefined,
+    href ? "relative transition-shadow hover:shadow-md" : undefined,
+    className,
+  );
+
+  if (href) {
+    /* The title link is stretched over the card, so the whole card is one target. */
+    return (
+      <Card as="article" className={cardClassName}>
+        <Link
+          href={href}
+          className={cn(
+            "after:absolute after:inset-0 after:rounded-lg focus-visible:outline-none",
+            "focus-visible:after:outline-2 focus-visible:after:outline-offset-2",
+            "focus-visible:after:outline-primary-400",
+          )}
+        >
+          <span className="sr-only">{title}</span>
+        </Link>
+        {body}
+      </Card>
+    );
+  }
+
+  return (
+    <Card as={stacked ? "article" : "div"} className={cardClassName}>
+      {body}
     </Card>
   );
 }
