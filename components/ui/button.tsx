@@ -3,20 +3,22 @@ import { cn } from "./cn";
 
 /**
  * Button specs: height 44px (default), padding 0 16px (lg) / 0 12px (md),
- * radius 12px, Inter Medium 14-16px.
+ * radius 12px, Inter Medium 14-16px. `hero` is the taller call to action the
+ * home page leads with (60px tall, wider padding).
  */
 
 export type ButtonVariant = "primary" | "secondary" | "tertiary" | "text";
-export type ButtonSize = "md" | "lg";
+export type ButtonSize = "md" | "lg" | "hero";
 
 const base =
-  "inline-flex h-11 items-center justify-center gap-2 rounded-md font-medium transition-colors " +
+  "inline-flex items-center justify-center rounded-md font-medium transition-colors " +
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-400 " +
   "disabled:cursor-not-allowed";
 
 const sizes: Record<ButtonSize, string> = {
-  md: "px-3 text-body",
-  lg: "px-4 text-body-lg",
+  md: "h-11 gap-2 px-3 text-body",
+  lg: "h-11 gap-2 px-4 text-body-lg",
+  hero: "h-15 gap-6 px-7 text-body-lg",
 };
 
 const variants: Record<ButtonVariant, string> = {
@@ -31,6 +33,19 @@ const variants: Record<ButtonVariant, string> = {
   text:
     "px-0 text-primary-500 hover:text-[#ea580c] disabled:text-primary-300",
 };
+
+/** Button styling for elements that cannot be a `<button>`, such as a link. */
+export function buttonClassName({
+  variant = "primary",
+  size = "lg",
+  className,
+}: {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  className?: string;
+} = {}) {
+  return cn(base, sizes[size], variants[variant], className);
+}
 
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
@@ -47,7 +62,7 @@ export function Button({
   return (
     <button
       type={type}
-      className={cn(base, sizes[size], variants[variant], className)}
+      className={buttonClassName({ variant, size, className })}
       {...props}
     />
   );

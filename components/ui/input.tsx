@@ -8,13 +8,37 @@ import { Icon } from "./icon";
  */
 
 const field =
-  "h-11 w-full rounded-md border border-neutral-200 bg-white px-4 text-body-lg " +
+  "w-full rounded-md border border-neutral-200 bg-white px-4 " +
   "text-neutral-900 transition-colors outline-none " +
   "placeholder:text-neutral-500 focus:border-primary-400";
 
-export type SearchInputProps = InputHTMLAttributes<HTMLInputElement> & {
+/** `hero` is the oversized field the home page leads with. */
+export type SearchInputSize = "md" | "hero";
+
+const searchSizes: Record<
+  SearchInputSize,
+  { field: string; icon: number; iconOffset: string; kbd: string; kbdOffset: string }
+> = {
+  md: {
+    field: "h-11 pl-11 text-body-lg",
+    icon: 20,
+    iconOffset: "left-4",
+    kbd: "px-2 py-1 text-small",
+    kbdOffset: "right-3",
+  },
+  hero: {
+    field: "h-16 pl-14 text-heading-3 sm:h-22 sm:pl-16",
+    icon: 24,
+    iconOffset: "left-5 sm:left-6",
+    kbd: "px-3 py-2 text-body",
+    kbdOffset: "right-4 sm:right-5",
+  },
+};
+
+export type SearchInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "size"> & {
   /** Keyboard hint rendered at the trailing edge. Pass null to hide it. */
   shortcut?: string | null;
+  size?: SearchInputSize;
 };
 
 export function SearchInput({
@@ -22,25 +46,36 @@ export function SearchInput({
   shortcut = "⌘ K",
   placeholder = "Search anything...",
   type = "search",
+  size = "md",
   ...props
 }: SearchInputProps) {
+  const spec = searchSizes[size];
+
   return (
     <div className={cn("relative", className)}>
       <Icon
         name="search"
-        size={20}
-        className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-neutral-900"
+        size={spec.icon}
+        className={cn(
+          "pointer-events-none absolute top-1/2 -translate-y-1/2 text-neutral-900",
+          spec.iconOffset,
+        )}
       />
       <input
         type={type}
         placeholder={placeholder}
-        className={cn(field, "pl-11", shortcut ? "pr-20" : undefined)}
+        className={cn(field, spec.field, shortcut ? "pr-20" : undefined)}
         {...props}
       />
       {shortcut ? (
         <kbd
           aria-hidden
-          className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 rounded-xs border border-neutral-200 bg-white px-2 py-1 text-small font-medium text-neutral-500"
+          className={cn(
+            "pointer-events-none absolute top-1/2 -translate-y-1/2 rounded-xs",
+            "border border-neutral-200 bg-white font-medium text-neutral-500",
+            spec.kbd,
+            spec.kbdOffset,
+          )}
         >
           {shortcut}
         </kbd>
@@ -54,7 +89,7 @@ export type SelectProps = SelectHTMLAttributes<HTMLSelectElement>;
 export function Select({ className, children, ...props }: SelectProps) {
   return (
     <div className={cn("relative", className)}>
-      <select className={cn(field, "appearance-none pr-11")} {...props}>
+      <select className={cn(field, "h-11 appearance-none pr-11 text-body-lg")} {...props}>
         {children}
       </select>
       <Icon
