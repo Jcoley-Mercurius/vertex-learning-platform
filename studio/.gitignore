@@ -1,0 +1,6 @@
+node_modules
+dist
+.sanity
+schema.json
+.env*
+!.env.example
