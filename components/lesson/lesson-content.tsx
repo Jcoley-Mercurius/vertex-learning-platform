@@ -88,7 +88,7 @@ export function LessonContent({
       {resources.length > 0 ? (
         <section className="mt-9 border-t border-neutral-200 pt-9">
           <h2 className="font-display text-heading-2 font-medium text-neutral-900">Resources</h2>
-          <ul className="mt-5 grid grid-cols-[repeat(auto-fit,minmax(20rem,1fr))] gap-5">
+          <ul className="mt-5 grid sm:grid-cols-2 gap-5">
             {resources.map((resource) => (
               <li key={resource._key}>
                 <ResourceLink resource={resource} />

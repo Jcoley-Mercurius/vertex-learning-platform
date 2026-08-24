@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Output, generateText, stepCountIs } from "ai";
 import { openai } from "@ai-sdk/openai";
+import { auth } from "@clerk/nextjs/server";
 
 import { createSearchMcpClient, fetchInitialContext } from "@/lib/search/mcp";
 import { buildSystemPrompt } from "@/lib/search/prompt";
@@ -32,7 +33,51 @@ const MAX_STEPS = 8;
 /** A search that has not landed by now is not worth making the learner wait for. */
 const REQUEST_TIMEOUT_MS = 60_000;
 
+/**
+ * In-memory rate limiting: 10 searches per user per minute. Resets on server
+ * restart, which is acceptable for a learning platform where billed search abuse
+ * is the concern, not production-grade rate control.
+ */
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_REQUESTS = 10;
+
+function checkRateLimit(identifier: string): boolean {
+  const now = Date.now();
+  const record = rateLimitMap.get(identifier);
+
+  if (!record || now > record.resetAt) {
+    rateLimitMap.set(identifier, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return true;
+  }
+
+  if (record.count >= RATE_LIMIT_MAX_REQUESTS) {
+    return false;
+  }
+
+  record.count += 1;
+  return true;
+}
+
 export async function POST(request: Request) {
+  // Require authentication before processing any search request.
+  const { userId } = await auth();
+
+  if (!userId) {
+    return NextResponse.json(
+      { error: "Authentication required. Please sign in to search." },
+      { status: 401 },
+    );
+  }
+
+  // Rate limit by authenticated user ID to prevent abuse of the billed search operation.
+  if (!checkRateLimit(userId)) {
+    return NextResponse.json(
+      { error: "Too many search requests. Please try again in a minute." },
+      { status: 429 },
+    );
+  }
+
   let body: unknown;
 
   try {
@@ -61,11 +106,13 @@ export async function POST(request: Request) {
   let mcpClient: Awaited<ReturnType<typeof createSearchMcpClient>> | undefined;
 
   try {
-    const [client_, initialContext] = await Promise.all([
-      createSearchMcpClient(),
-      fetchInitialContext(),
-    ]);
-    mcpClient = client_;
+    const clientPromise = createSearchMcpClient();
+    const contextPromise = fetchInitialContext();
+
+    // Assign mcpClient as soon as it resolves, before awaiting context fetch,
+    // so it remains reachable for cleanup even if context fetch fails.
+    mcpClient = await clientPromise;
+    const initialContext = await contextPromise;
 
     // The schema is already in the system prompt, so the tool that fetches it
     // would only burn a turn and duplicate the payload.

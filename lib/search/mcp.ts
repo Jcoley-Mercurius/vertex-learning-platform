@@ -37,6 +37,9 @@ export function createSearchMcpClient() {
  */
 let initialContextPromise: Promise<string> | null = null;
 
+/** The initial context fetch times out after 10 seconds. */
+const INITIAL_CONTEXT_TIMEOUT_MS = 10_000;
+
 export function fetchInitialContext() {
   initialContextPromise ??= loadInitialContext().catch((error) => {
     initialContextPromise = null;
@@ -51,7 +54,10 @@ async function loadInitialContext() {
   const url = new URL(mcpUrl);
   url.pathname = `${url.pathname.replace(/\/$/, "")}/initial-context`;
 
-  const response = await fetch(url, { headers: authHeaders });
+  const response = await fetch(url, {
+    headers: authHeaders,
+    signal: AbortSignal.timeout(INITIAL_CONTEXT_TIMEOUT_MS),
+  });
 
   if (!response.ok) {
     throw new Error(`Sanity Context initial-context failed: ${response.status}`);

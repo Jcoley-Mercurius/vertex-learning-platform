@@ -23,28 +23,38 @@ export const searchOutputSchema = z.object({
     ),
   results: z
     .array(
-      z.object({
-        lessonId: z
-          .string()
-          .describe("The _id of a lesson document, exactly as the dataset spells it."),
-        kind: z
-          .enum(["lesson", "video"])
-          .describe(
-            "'lesson' when the lesson matches on its own topic. 'video' when a specific moment inside its video matches.",
-          ),
-        startSeconds: z
-          .number()
-          .int()
-          .min(0)
-          .nullable()
-          .describe(
-            "For kind 'video', the second the match starts at. Always null for kind 'lesson'.",
-          ),
-        description: z
-          .string()
-          .max(200)
-          .describe("One sentence on why this matches the query. No invented facts."),
-      }),
+      z.discriminatedUnion("kind", [
+        z.object({
+          kind: z.literal("lesson").describe("The lesson matches on its own topic."),
+          lessonId: z
+            .string()
+            .describe("The _id of a lesson document, exactly as the dataset spells it."),
+          startSeconds: z
+            .null()
+            .describe("Always null for lesson results — lesson matches have no timestamp."),
+          description: z
+            .string()
+            .max(200)
+            .describe("One sentence on why this matches the query. No invented facts."),
+        }),
+        z.object({
+          kind: z
+            .literal("video")
+            .describe("A specific moment inside the lesson's video matches."),
+          lessonId: z
+            .string()
+            .describe("The _id of a lesson document, exactly as the dataset spells it."),
+          startSeconds: z
+            .number()
+            .int()
+            .min(0)
+            .describe("The second the match starts at, must be a non-negative integer."),
+          description: z
+            .string()
+            .max(200)
+            .describe("One sentence on why this matches the query. No invented facts."),
+        }),
+      ]),
     )
     .describe("Every relevant match, best first. Do not truncate to a handful."),
 });
