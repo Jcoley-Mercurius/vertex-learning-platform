@@ -46,6 +46,7 @@ export const lesson = defineType({
     defineField({
       name: 'poster',
       title: 'Poster image',
+      description: 'Shown on lesson cards and on every video search result.',
       type: 'image',
       options: {hotspot: true},
       group: 'video',
@@ -57,6 +58,10 @@ export const lesson = defineType({
           validation: (rule) => rule.required(),
         }),
       ],
+      // Nothing derives a thumbnail from the video URL, so a lesson without a
+      // poster leaves an empty slot on its cards. `assetRequired` is what
+      // catches alt text typed against an image that was never uploaded.
+      validation: (rule) => rule.required().assetRequired(),
     }),
     defineField({
       name: 'durationSeconds',

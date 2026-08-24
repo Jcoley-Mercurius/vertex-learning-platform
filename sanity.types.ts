@@ -115,7 +115,7 @@ export type Lesson = {
   summary?: string;
   videoUrl?: string;
   poster?: {
-    asset?: SanityImageAssetReference;
+    asset: SanityImageAssetReference;
     media?: unknown;
     hotspot?: SanityImageHotspot;
     crop?: SanityImageCrop;
@@ -522,7 +522,7 @@ export type COURSE_BY_SLUG_QUERY_RESULT = {
             lqip: string | null;
             dimensions: SanityImageDimensions | null;
           } | null;
-        } | null;
+        };
         media?: unknown;
         hotspot?: SanityImageHotspot;
         crop?: SanityImageCrop;
@@ -682,7 +682,7 @@ export type LESSON_BY_SLUG_QUERY_RESULT = {
         lqip: string | null;
         dimensions: SanityImageDimensions | null;
       } | null;
-    } | null;
+    };
     media?: unknown;
     hotspot?: SanityImageHotspot;
     crop?: SanityImageCrop;
