@@ -3,12 +3,13 @@ import { cn } from "./cn";
 
 /**
  * Button specs: height 44px (default), padding 0 16px (lg) / 0 12px (md),
- * radius 12px, Inter Medium 14-16px. `hero` is the taller call to action the
- * home page leads with (60px tall, wider padding).
+ * radius 12px, Inter Medium 14-16px. `cta` is the 52px action the course page
+ * pairs its buttons at; `hero` is the taller call to action the home page leads
+ * with (60px tall, wider padding).
  */
 
 export type ButtonVariant = "primary" | "secondary" | "tertiary" | "text";
-export type ButtonSize = "md" | "lg" | "hero";
+export type ButtonSize = "md" | "lg" | "cta" | "hero";
 
 const base =
   "inline-flex items-center justify-center rounded-md font-medium transition-colors " +
@@ -18,6 +19,7 @@ const base =
 const sizes: Record<ButtonSize, string> = {
   md: "h-11 gap-2 px-3 text-body",
   lg: "h-11 gap-2 px-4 text-body-lg",
+  cta: "h-13 gap-4 px-6 text-body-lg",
   hero: "h-15 gap-6 px-7 text-body-lg",
 };
 

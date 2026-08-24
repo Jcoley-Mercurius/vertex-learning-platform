@@ -26,21 +26,61 @@ export type CourseGlyphName =
   | "system-design"
   | "security";
 
+/**
+ * A letterform tile. The letter is SVG text rather than a sized `<span>` so it
+ * scales with the tile: the same mark reads correctly on a 72px course card and
+ * on the 280px hero tile of the course page.
+ */
+function Letterform({
+  className,
+  letter,
+  fontSize,
+  fontClassName,
+}: {
+  className: string;
+  letter: string;
+  /** In viewBox units, so it is a share of the tile. */
+  fontSize: number;
+  fontClassName: string;
+}) {
+  return (
+    <span className={`${tile} ${className}`}>
+      <svg viewBox="0 0 24 24" className="h-full w-full" aria-hidden>
+        <text
+          x="12"
+          y="12"
+          textAnchor="middle"
+          dominantBaseline="central"
+          fontSize={fontSize}
+          fill="#fff"
+          className={fontClassName}
+        >
+          {letter}
+        </text>
+      </svg>
+    </span>
+  );
+}
+
 function NextGlyph() {
   return (
-    <span className={`${tile} bg-neutral-900`}>
-      <span className="font-display text-[2.25rem] leading-none font-medium text-white">
-        N
-      </span>
-    </span>
+    <Letterform
+      className="bg-neutral-900"
+      letter="N"
+      fontSize={13}
+      fontClassName="font-display font-medium"
+    />
   );
 }
 
 function TypeScriptGlyph() {
   return (
-    <span className={`${tile} bg-[#3178C6]`}>
-      <span className="text-heading-1 leading-none font-bold text-white">TS</span>
-    </span>
+    <Letterform
+      className="bg-[#3178C6]"
+      letter="TS"
+      fontSize={9.5}
+      fontClassName="font-sans font-bold"
+    />
   );
 }
 
