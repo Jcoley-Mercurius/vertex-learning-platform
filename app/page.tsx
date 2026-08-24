@@ -1,50 +1,22 @@
 import Link from "next/link";
-import { AccentBars, CourseGlyph, SiteHeader, type CourseGlyphName } from "@/components/site";
+import { AccentBars, CourseGlyph, SiteHeader } from "@/components/site";
 import { CourseCard, Icon, SearchInput, buttonClassName } from "@/components/ui";
+import { formatDuration, formatLevel, pluralize } from "@/lib/format";
+import { COURSES_CATALOG_QUERY } from "@/sanity/lib/queries";
+import { sanityFetch } from "@/sanity/lib/live";
 
-/**
- * Placeholder catalog. Sanity is not wired yet — this is the seam a GROQ query
- * replaces, so the shape mirrors the course fields the model will return.
- */
-const courses: Array<{
-  slug: string;
-  title: string;
-  description: string;
-  level: string;
-  duration: string;
-  modules: string;
-  glyph: CourseGlyphName;
-}> = [
-  {
-    slug: "nextjs-for-production",
-    title: "Next.js for Production",
-    description: "Build scalable, high-performance web applications with Next.js.",
-    level: "Intermediate",
-    duration: "18h 24m",
-    modules: "12 modules",
-    glyph: "nextjs",
-  },
-  {
-    slug: "docker-essentials",
-    title: "Docker Essentials",
-    description: "Containerize applications and streamline your development workflow.",
-    level: "Beginner",
-    duration: "10h 12m",
-    modules: "8 modules",
-    glyph: "docker",
-  },
-  {
-    slug: "typescript-deep-dive",
-    title: "TypeScript Deep Dive",
-    description: "Go beyond the basics and write safer, more expressive code.",
-    level: "Intermediate",
-    duration: "14h 36m",
-    modules: "10 modules",
-    glyph: "typescript",
-  },
-];
+/** The reference shows three cards; the rest of the catalog lives behind "View all courses". */
+const FEATURED_COURSES = 3;
 
-export default function Home() {
+export default async function Home() {
+  /* Published, un-stega'd content: the page is read only and never previews drafts. */
+  const { data } = await sanityFetch({
+    query: COURSES_CATALOG_QUERY,
+    perspective: "published",
+    stega: false,
+  });
+  const courses = (data ?? []).slice(0, FEATURED_COURSES);
+
   return (
     <>
       <SiteHeader />
@@ -88,6 +60,7 @@ export default function Home() {
           </div>
         </section>
 
+        {courses.length > 0 ? (
         <section className="px-10 pt-12 pb-14">
           <div className="mx-auto w-full max-w-[1440px]">
             <div className="flex flex-wrap items-baseline justify-between gap-4">
@@ -105,16 +78,16 @@ export default function Home() {
 
             <ul className="mt-5 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
               {courses.map((course) => (
-                <li key={course.slug} className="flex">
+                <li key={course._id} className="flex">
                   <CourseCard
                     orientation="stacked"
                     href={`/courses/${course.slug}`}
-                    title={course.title}
-                    description={course.description}
-                    level={course.level}
-                    duration={course.duration}
-                    modules={course.modules}
-                    icon={<CourseGlyph name={course.glyph} />}
+                    title={course.title ?? "Untitled course"}
+                    description={course.summary ?? ""}
+                    level={formatLevel(course.level)}
+                    duration={formatDuration(course.durationSeconds)}
+                    modules={pluralize(course.moduleCount, "module")}
+                    icon={<CourseGlyph name={course.glyph ?? "nextjs"} />}
                     className="w-full"
                   />
                 </li>
@@ -122,6 +95,7 @@ export default function Home() {
             </ul>
           </div>
         </section>
+        ) : null}
 
         <section className="overflow-hidden">
           <div className="mx-auto flex w-full max-w-[1440px] items-center gap-6 px-10">
