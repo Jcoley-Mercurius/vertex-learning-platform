@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { AccentBars, CourseGlyph, SiteHeader } from "@/components/site";
-import { CourseCard, Icon, SearchInput, buttonClassName } from "@/components/ui";
+import { AccentBars, CourseGlyph, SearchForm, SiteHeader } from "@/components/site";
+import { CourseCard, Icon, buttonClassName } from "@/components/ui";
 import { formatDuration, formatLevel, pluralize } from "@/lib/format";
 import { COURSES_CATALOG_QUERY } from "@/sanity/lib/queries";
 import { sanityFetch } from "@/sanity/lib/live";
@@ -45,18 +45,7 @@ export default async function Home() {
               <Icon name="arrow-right" size={20} />
             </Link>
 
-            <form action="/search" role="search" className="mt-10 w-full max-w-[960px]">
-              <label htmlFor="site-search" className="sr-only">
-                Ask anything about your learning
-              </label>
-              <SearchInput
-                id="site-search"
-                name="q"
-                size="hero"
-                placeholder="Ask anything about your learning..."
-                className="shadow-sm"
-              />
-            </form>
+            <SearchForm />
           </div>
         </section>
 
