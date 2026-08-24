@@ -1,0 +1,30 @@
+{
+  "name": "vertex-studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "sanity dev",
+    "start": "sanity start",
+    "build": "sanity build",
+    "deploy": "sanity deploy",
+    "deploy-graphql": "sanity graphql deploy",
+    "schema:deploy": "sanity schema deploy",
+    "typegen": "sanity schemas extract && sanity typegen generate",
+    "seed:transform": "node scripts/seed/transform.mjs \"${TMPDIR:-/tmp}/vertex-seed.import.ndjson\"",
+    "seed": "npm run seed:transform && npm run seed:import",
+    "seed:import": "set -a && . ./.env.local && set +a && sanity dataset import --replace \"${TMPDIR:-/tmp}/vertex-seed.import.ndjson\" --dataset \"$SANITY_STUDIO_DATASET\""
+  },
+  "dependencies": {
+    "@sanity/icons": "^3.8.0",
+    "@sanity/vision": "^5.31.2",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "sanity": "^5.31.2",
+    "styled-components": "^6.5.3"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "typescript": "^5"
+  }
+}
