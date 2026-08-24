@@ -188,7 +188,19 @@ npx tsc --noEmit
 npm run lint
 npm run build
 npm run dev            # confirm / and /design-system unchanged, /studio now 404s
-grep -rl "$SANITY_API_READ_TOKEN" .next/static || echo "no token in client bundle"
+
+# Verify token is not in client bundles (fail if .next/static missing, command errors, or empty token found)
+test -d .next/static || { echo "ERROR: .next/static missing; run build first" && exit 1; }
+TOKEN="${SANITY_API_READ_TOKEN:?ERROR: SANITY_API_READ_TOKEN is not set or empty}"
+if grep -rF "$TOKEN" .next/static 2>/dev/null; then
+  echo "ERROR: token found in client bundle" && exit 1
+else
+  case $? in
+    0) echo "ERROR: token found in client bundle" && exit 1 ;;
+    1) echo "✓ no token in client bundle" ;;
+    *) echo "ERROR: grep failed with status $?" && exit 1 ;;
+  esac
+fi
 ```
 
 `sanity deploy` and `sanity schema deploy` (AGENTS.md §13) are **not** run in this change — they

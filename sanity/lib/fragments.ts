@@ -17,6 +17,28 @@ export const imageFragment = /* groq */ `
   }
 `
 
+/**
+ * Portable Text with dereferenced image assets, so `metadata.lqip` is available
+ * for Next.js Image placeholders. Used for lesson notes and instructor bios.
+ */
+export const richTextFragment = /* groq */ `
+  ...{
+    ...,
+    markDefs[]{
+      ...,
+      _type == "link" => { href }
+    },
+    _type == "image" => {
+      ...,
+      asset->{
+        _id,
+        url,
+        metadata { lqip, dimensions }
+      }
+    }
+  }
+`
+
 /** Everything a lesson card needs, and nothing that could pull in notes. */
 export const lessonCardFragment = /* groq */ `
   _id,

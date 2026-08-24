@@ -137,9 +137,15 @@ function transformLesson(lesson) {
 }
 
 function transformCourse(course) {
-  const glyph = course.glyph ?? COURSE_GLYPHS[course._id]
-  if (!glyph) {
+  const mappedGlyph = COURSE_GLYPHS[course._id]
+  if (!mappedGlyph) {
     throw new Error(`course ${course._id}: no glyph mapped for this course`)
+  }
+
+  if (course.glyph && course.glyph !== mappedGlyph) {
+    throw new Error(
+      `course ${course._id}: existing glyph "${course.glyph}" differs from mapped value "${mappedGlyph}"`
+    )
   }
 
   for (const outcome of course.learningOutcomes ?? []) {
@@ -148,7 +154,7 @@ function transformCourse(course) {
     }
   }
 
-  return {...course, glyph}
+  return {...course, glyph: mappedGlyph}
 }
 
 const lessons = docs.filter((d) => d._type === 'lesson')

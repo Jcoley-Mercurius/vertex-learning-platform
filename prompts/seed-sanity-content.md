@@ -1,5 +1,12 @@
 # Implementation prompt: Seed Sanity from the provided seed files
 
+> **SUPERSEDED:** This plan is kept for historical context only. The authoritative contract
+> for icon mapping and course glyph assignment is now in
+> `prompts/course-glyphs-and-outcome-icons.md`. The lossy icon remapping (section "Icon remap")
+> and category-derived glyph logic (section "Glyph derived from the course's category") described
+> below are no longer in use. Refer to `course-glyphs-and-outcome-icons.md` for the current
+> implementation.
+
 ## Goal
 
 Load the supplied course content into the `production` dataset of Sanity project

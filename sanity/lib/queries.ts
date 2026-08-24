@@ -6,6 +6,7 @@ import {
   imageFragment,
   instructorSummaryFragment,
   lessonCardFragment,
+  richTextFragment,
 } from './fragments'
 
 /* ------------------------------------------------------------------ courses */
@@ -43,7 +44,7 @@ export const COURSE_BY_SLUG_QUERY = defineQuery(/* groq */ `
     instructor->{
       ${instructorSummaryFragment},
       expertise,
-      bio
+      bio[]{${richTextFragment}}
     },
     learningOutcomes[] {
       _key,
@@ -102,7 +103,7 @@ export const LESSON_BY_SLUG_QUERY = defineQuery(/* groq */ `
     freePreview,
     studentCount,
     keyPoints,
-    notes,
+    notes[]{${richTextFragment}},
     proTip,
     poster { ${imageFragment} },
     resources[] {
@@ -144,7 +145,7 @@ export const INSTRUCTOR_BY_SLUG_QUERY = defineQuery(/* groq */ `
   *[_type == "instructor" && slug.current == $slug][0] {
     ${instructorSummaryFragment},
     expertise,
-    bio,
+    bio[]{${richTextFragment}},
     "courses": *[_type == "course" && defined(slug.current) && references(^._id)]
       | order(popular desc, title asc) {
       ${courseCardFragment}

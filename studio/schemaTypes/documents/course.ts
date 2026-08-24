@@ -31,8 +31,10 @@ export const course = defineType({
       type: 'text',
       rows: 3,
       group: 'content',
-      validation: (rule) =>
-        rule.required().max(280).warning('Course cards clip beyond roughly 280 characters'),
+      validation: (rule) => [
+        rule.required(),
+        rule.max(280).warning('Course cards clip beyond roughly 280 characters'),
+      ],
     }),
     defineField({
       name: 'instructor',
@@ -105,7 +107,7 @@ export const course = defineType({
       description: 'In whole currency units. Zero means free.',
       type: 'number',
       group: 'marketing',
-      validation: (rule) => rule.required().min(0),
+      validation: (rule) => rule.required().integer().min(0),
     }),
     defineField({
       name: 'popular',
