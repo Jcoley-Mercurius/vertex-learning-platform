@@ -55,14 +55,14 @@ export function SiteHeader() {
           </button>
 
           <Show when="signed-out">
-            <div className="flex items-center gap-3">
+            <div className="flex flex-shrink-0 items-center gap-3">
               <SignInButton mode="modal">
-                <button type="button" className={buttonClassName({ variant: "tertiary", size: "md" })}>
+                <button type="button" className={buttonClassName({ variant: "tertiary", size: "md", className: "whitespace-nowrap" })}>
                   Sign in
                 </button>
               </SignInButton>
               <SignUpButton mode="modal">
-                <button type="button" className={buttonClassName({ variant: "primary", size: "md" })}>
+                <button type="button" className={buttonClassName({ variant: "primary", size: "md", className: "whitespace-nowrap" })}>
                   Sign up
                 </button>
               </SignUpButton>
