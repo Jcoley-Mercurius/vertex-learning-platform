@@ -3,10 +3,13 @@
  * writes the result somewhere else. `seed.ndjson` and `videos.json` are inputs
  * only: this script never writes into its own directory.
  *
- * Two things differ between the seed and `studio/schemaTypes`:
+ * Three things differ between the seed and `studio/schemaTypes`:
  *   - lessons carry `thumbnail` / `duration`, the schema wants `poster` /
  *     `durationSeconds`, both required;
- *   - courses carry no `glyph`, which the schema requires and the catalog reads.
+ *   - courses carry no `glyph`, which the schema requires and the catalog reads;
+ *   - course covers point at a random picsum photograph, which has nothing to do
+ *     with the course. They are repointed at the generated cover for the course's
+ *     own glyph (`covers.mjs`, run with `npm run seed:covers`).
  *
  * Learning-outcome icons used to be remapped here too. They are not any more:
  * the schema and `components/ui/icon.tsx` carry the seed's own eight names, so
@@ -17,12 +20,13 @@
  *
  * Usage: node transform.mjs [outFile]
  */
-import {readFileSync, writeFileSync} from 'node:fs'
+import {existsSync, readFileSync, writeFileSync} from 'node:fs'
 import {dirname, resolve} from 'node:path'
-import {fileURLToPath} from 'node:url'
+import {fileURLToPath, pathToFileURL} from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const seedFile = resolve(here, 'seed.ndjson')
+const coversDir = resolve(here, 'covers')
 const videosFile = resolve(here, 'videos.json')
 const outFile = resolve(process.cwd(), process.argv[2] ?? 'seed.import.ndjson')
 
@@ -154,7 +158,26 @@ function transformCourse(course) {
     }
   }
 
-  return {...course, glyph: mappedGlyph}
+  return {...course, glyph: mappedGlyph, coverImage: coverFor(course, mappedGlyph)}
+}
+
+/**
+ * The generated cover for this course's mark. An absolute `file://` URL, because
+ * the transformed ndjson is written outside this directory and a relative asset
+ * path would be resolved against the wrong place by `sanity dataset import`.
+ */
+function coverFor(course, glyph) {
+  const file = resolve(coversDir, `${glyph}.png`)
+  if (!existsSync(file)) {
+    throw new Error(
+      `course ${course._id}: no cover for glyph "${glyph}". Run \`npm run seed:covers\`.`,
+    )
+  }
+
+  return {
+    ...(course.coverImage ?? {_type: 'image'}),
+    _sanityAsset: `image@${pathToFileURL(file).href}`,
+  }
 }
 
 const lessons = docs.filter((d) => d._type === 'lesson')

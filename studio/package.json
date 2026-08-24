@@ -12,6 +12,7 @@
     "schema:deploy": "sanity schema deploy",
     "typegen": "sanity schemas extract && sanity typegen generate",
     "seed:transform": "node scripts/seed/transform.mjs \"${TMPDIR:-/tmp}/vertex-seed.import.ndjson\"",
+    "seed:covers": "node scripts/seed/covers.mjs",
     "seed": "npm run seed:transform && npm run seed:import",
     "seed:import": "set -a && . ./.env.local && set +a && sanity dataset import --replace \"${TMPDIR:-/tmp}/vertex-seed.import.ndjson\" --dataset \"$SANITY_STUDIO_DATASET\""
   },
@@ -24,6 +25,7 @@
     "styled-components": "^6.5.3"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "@types/react": "^19",
     "typescript": "^5"
   }
