@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { Icon, Logo, cn } from "@/components/ui";
+import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
+import { Icon, Logo, buttonClassName, cn } from "@/components/ui";
 
 const links = [
   { label: "Courses", href: "/courses" },
@@ -11,8 +12,9 @@ const focusRing =
 
 /**
  * The site header from the home reference: logo, primary links, notification bell,
- * and the account avatar. The bell and the avatar are presentational for now —
- * notifications have no backend and Clerk's UserButton takes the avatar slot later.
+ * and the account controls. The bell is presentational for now — notifications have
+ * no backend. The avatar slot holds Clerk's UserButton when signed in, and the sign
+ * in / sign up buttons when signed out.
  */
 export function SiteHeader() {
   return (
@@ -51,13 +53,33 @@ export function SiteHeader() {
           >
             <Icon name="bell" size={24} />
           </button>
-          <span
-            aria-label="Your account"
-            role="img"
-            className="flex h-12 w-12 items-center justify-center rounded-full border border-neutral-200 bg-neutral-100 text-neutral-500"
-          >
-            <Icon name="user" size={24} />
-          </span>
+
+          <Show when="signed-out">
+            <div className="flex flex-shrink-0 items-center gap-3">
+              <SignInButton mode="modal">
+                <button type="button" className={buttonClassName({ variant: "tertiary", size: "md", className: "whitespace-nowrap" })}>
+                  Sign in
+                </button>
+              </SignInButton>
+              <SignUpButton mode="modal">
+                <button type="button" className={buttonClassName({ variant: "primary", size: "md", className: "whitespace-nowrap" })}>
+                  Sign up
+                </button>
+              </SignUpButton>
+            </div>
+          </Show>
+
+          <Show when="signed-in">
+            <UserButton
+              appearance={{
+                elements: {
+                  userButtonAvatarBox: "h-12 w-12",
+                  userButtonTrigger:
+                    "rounded-full focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary-400",
+                },
+              }}
+            />
+          </Show>
         </div>
       </div>
     </header>
