@@ -1061,6 +1061,55 @@ export type CATEGORIES_QUERY_RESULT = Array<{
 // Query: *[_type == "category" && defined(slug.current)].slug.current
 export type CATEGORY_SLUGS_QUERY_RESULT = Array<string | null>;
 
+// Source: ../sanity/lib/queries.ts
+// Variable: SEARCH_LESSONS_BY_IDS_QUERY
+// Query: *[_type == "lesson" && _id in $ids] {    _id,    title,    "slug": slug.current,    durationSeconds,    freePreview,    keyPoints,    poster {   ...,  asset->{    _id,    url,    metadata { lqip, dimensions }  } },    "course": *[_type == "course" && references(^._id)] | order(_id asc) [0] {      _id,      title,      "slug": slug.current,      glyph,      modules[] {        _key,        title,        "lessonIds": lessons[]._ref      }    }  }
+export type SEARCH_LESSONS_BY_IDS_QUERY_RESULT = Array<{
+  _id: string;
+  title: string | null;
+  slug: string | null;
+  durationSeconds: number | null;
+  freePreview: boolean | null;
+  keyPoints: Array<string> | null;
+  poster: {
+    asset: {
+      _id: string;
+      url: string | null;
+      metadata: {
+        lqip: string | null;
+        dimensions: SanityImageDimensions | null;
+      } | null;
+    };
+    media?: unknown;
+    hotspot?: SanityImageHotspot;
+    crop?: SanityImageCrop;
+    alt?: string;
+    _type: "image";
+  } | null;
+  course: {
+    _id: string;
+    title: string | null;
+    slug: string | null;
+    glyph:
+      | "docker"
+      | "llm"
+      | "nextjs"
+      | "postgres"
+      | "python"
+      | "rag"
+      | "react"
+      | "security"
+      | "system-design"
+      | "typescript"
+      | null;
+    modules: Array<{
+      _key: string;
+      title: string | null;
+      lessonIds: Array<string> | null;
+    }> | null;
+  } | null;
+}>;
+
 // Query TypeMap
 import "@sanity/client";
 declare module "@sanity/client" {
@@ -1076,5 +1125,6 @@ declare module "@sanity/client" {
     '\n  *[_type == "instructor" && slug.current == $slug][0] {\n    \n  _id,\n  name,\n  "slug": slug.current,\n  title,\n  photo { \n  ...,\n  asset->{\n    _id,\n    url,\n    metadata { lqip, dimensions }\n  }\n }\n,\n    expertise,\n    bio[]{\n  ...{\n    ...,\n    markDefs[]{\n      ...,\n      _type == "link" => { href }\n    },\n    _type == "image" => {\n      ...,\n      asset->{\n        _id,\n        url,\n        metadata { lqip, dimensions }\n      }\n    }\n  }\n},\n    "courses": *[_type == "course" && defined(slug.current) && references(^._id)]\n      | order(popular desc, title asc) {\n      \n  _id,\n  title,\n  "slug": slug.current,\n  summary,\n  glyph,\n  level,\n  price,\n  popular,\n  studentCount,\n  coverImage { \n  ...,\n  asset->{\n    _id,\n    url,\n    metadata { lqip, dimensions }\n  }\n },\n  category->{ _id, title, "slug": slug.current },\n  instructor->{ \n  _id,\n  name,\n  "slug": slug.current,\n  title,\n  photo { \n  ...,\n  asset->{\n    _id,\n    url,\n    metadata { lqip, dimensions }\n  }\n }\n },\n  \n  "moduleCount": coalesce(count(modules), 0),\n  "lessonCount": coalesce(count(modules[].lessons[]), 0),\n  "durationSeconds": coalesce(math::sum(modules[].lessons[]->durationSeconds), 0)\n\n\n    }\n  }\n': INSTRUCTOR_BY_SLUG_QUERY_RESULT;
     '\n  *[_type == "category" && defined(slug.current)] | order(title asc) {\n    _id,\n    title,\n    "slug": slug.current,\n    description,\n    "courseCount": count(*[_type == "course" && references(^._id)])\n  }\n': CATEGORIES_QUERY_RESULT;
     '\n  *[_type == "category" && defined(slug.current)].slug.current\n': CATEGORY_SLUGS_QUERY_RESULT;
+    '\n  *[_type == "lesson" && _id in $ids] {\n    _id,\n    title,\n    "slug": slug.current,\n    durationSeconds,\n    freePreview,\n    keyPoints,\n    poster { \n  ...,\n  asset->{\n    _id,\n    url,\n    metadata { lqip, dimensions }\n  }\n },\n    "course": *[_type == "course" && references(^._id)] | order(_id asc) [0] {\n      _id,\n      title,\n      "slug": slug.current,\n      glyph,\n      modules[] {\n        _key,\n        title,\n        "lessonIds": lessons[]._ref\n      }\n    }\n  }\n': SEARCH_LESSONS_BY_IDS_QUERY_RESULT;
   }
 }

@@ -287,6 +287,25 @@ const glyphs = {
       </>
     ),
   },
+  /** The bare triangle, for a play affordance that already sits on a disc. */
+  play: {
+    outline: <path d="m7 4 13 8-13 8V4Z" />,
+    filled: <path d="m7 4 13 8-13 8V4Z" />,
+  },
+  /** The bulb with its rays, as the lesson page's Pro Tip panel shows it. */
+  lightbulb: {
+    outline: (
+      <>
+        <path d="M9.5 16a5.5 5.5 0 1 1 5 0v2h-5v-2Z" />
+        <path d="M10 21h4" />
+        <path d="M12 2v1.5" />
+        <path d="m4.9 5.4 1 1" />
+        <path d="m19.1 5.4-1 1" />
+        <path d="M3 12.5h1.5" />
+        <path d="M19.5 12.5H21" />
+      </>
+    ),
+  },
 } satisfies Record<string, IconGlyph>;
 
 export type IconName = keyof typeof glyphs;
