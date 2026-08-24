@@ -86,6 +86,10 @@ export const LESSON_SLUGS_QUERY = defineQuery(/* groq */ `
  * parent, so the course is resolved with a reverse reference. The course's whole
  * module skeleton comes back so the page can derive the lesson label and the
  * previous/next links without a second round trip.
+ *
+ * Nothing stops a lesson being reused across courses, and an unordered `[0]`
+ * would then pick an arbitrary one — so the label, breadcrumbs and navigation
+ * could all disagree between requests. Ordering by `_id` makes the pick stable.
  */
 export const LESSON_BY_SLUG_QUERY = defineQuery(/* groq */ `
   *[_type == "lesson" && slug.current == $slug][0] {
@@ -108,7 +112,7 @@ export const LESSON_BY_SLUG_QUERY = defineQuery(/* groq */ `
       description,
       url
     },
-    "course": *[_type == "course" && references(^._id)][0] {
+    "course": *[_type == "course" && references(^._id)] | order(_id asc) [0] {
       _id,
       title,
       "slug": slug.current,
