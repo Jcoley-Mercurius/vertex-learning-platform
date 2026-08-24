@@ -128,7 +128,9 @@ export const course = defineType({
       type: 'array',
       of: [defineArrayMember({type: 'module'})],
       group: 'curriculum',
-      validation: (rule) => rule.min(1).error('A course needs at least one module'),
+      // `min` short-circuits on an absent array, so `required` is what catches a
+      // course saved with no modules field at all.
+      validation: (rule) => rule.required().min(1).error('A course needs at least one module'),
     }),
   ],
   preview: {

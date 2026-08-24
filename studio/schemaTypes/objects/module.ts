@@ -27,8 +27,10 @@ export const module = defineType({
       name: 'lessons',
       type: 'array',
       of: [defineArrayMember({type: 'reference', to: [{type: 'lesson'}]})],
+      // `min` short-circuits on an absent array, so `required` is what catches a
+      // module saved with no lessons field at all.
       validation: (rule) =>
-        rule.unique().min(1).error('A module needs at least one lesson'),
+        rule.required().unique().min(1).error('A module needs at least one lesson'),
     }),
   ],
   preview: {
