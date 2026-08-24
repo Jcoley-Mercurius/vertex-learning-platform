@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useId, useState } from "react";
+import posthog from "posthog-js";
 import { Badge, Icon, cn } from "@/components/ui";
 import { formatDuration, lessonLabel, pluralize } from "@/lib/format";
 
@@ -48,10 +49,23 @@ export function CourseCurriculum({
   const truncated = modules.length > COLLAPSED_MODULES;
   const visible = truncated && !showAll ? modules.slice(0, COLLAPSED_MODULES) : modules;
 
-  const toggle = (key: string) =>
+  const toggle = (key: string) => {
+    const isOpening = !openKeys.includes(key);
+    if (isOpening) {
+      const mod = modules.find((m) => m._key === key);
+      const modIndex = modules.findIndex((m) => m._key === key);
+      if (mod) {
+        posthog.capture("module_expanded", {
+          module_title: mod.title,
+          module_index: modIndex,
+          lesson_count: mod.lessons.length,
+        });
+      }
+    }
     setOpenKeys((keys) =>
       keys.includes(key) ? keys.filter((k) => k !== key) : [...keys, key],
     );
+  };
 
   return (
     <section className="mt-14">
@@ -159,6 +173,16 @@ export function CourseCurriculum({
                         {lesson.href ? (
                           <Link
                             href={lesson.href}
+                            onClick={() =>
+                              posthog.capture("lesson_clicked", {
+                                lesson_title: lesson.title,
+                                lesson_index: lessonIndex,
+                                module_title: module.title,
+                                module_index: moduleIndex,
+                                free_preview: lesson.freePreview,
+                                duration_seconds: lesson.durationSeconds,
+                              })
+                            }
                             className={cn(
                               "flex items-center gap-4 rounded-sm px-3 py-2 transition-colors hover:bg-neutral-100",
                               "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-400",
@@ -184,7 +208,14 @@ export function CourseCurriculum({
           <button
             type="button"
             aria-expanded={showAll}
-            onClick={() => setShowAll((value) => !value)}
+            onClick={() => {
+              const next = !showAll;
+              posthog.capture("curriculum_show_all_toggled", {
+                expanded: next,
+                total_modules: modules.length,
+              });
+              setShowAll(next);
+            }}
             className={cn(
               "inline-flex h-11 items-center gap-4 rounded-md border border-neutral-200 bg-white px-5",
               "font-display text-body-lg text-neutral-900 transition-colors hover:bg-neutral-100",
