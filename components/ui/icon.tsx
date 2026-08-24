@@ -211,6 +211,72 @@ const glyphs = {
       </>
     ),
   },
+  layers: {
+    outline: (
+      <>
+        <path d="m12 2 9 5-9 5-9-5 9-5Z" />
+        <path d="m3 12 9 5 9-5" />
+        <path d="m3 17 9 5 9-5" />
+      </>
+    ),
+  },
+  workflow: {
+    outline: (
+      <>
+        <rect x="3" y="3" width="7" height="6" rx="1.5" />
+        <rect x="14" y="15" width="7" height="6" rx="1.5" />
+        <path d="M6.5 9v6a3 3 0 0 0 3 3H14" />
+      </>
+    ),
+  },
+  gauge: {
+    outline: (
+      <>
+        <path d="M3 15a9 9 0 1 1 18 0" />
+        <path d="m12 15 4.5-5" />
+        <circle cx="12" cy="15" r="1.5" />
+      </>
+    ),
+  },
+  rocket: {
+    outline: (
+      <>
+        <path d="M12 2c3 2.2 5 5.9 5 10l-2.5 4h-5L7 12c0-4.1 2-7.8 5-10Z" />
+        <path d="M9.5 16 8 21l4-2 4 2-1.5-5" />
+        <circle cx="12" cy="10" r="1.5" />
+      </>
+    ),
+  },
+  sparkles: {
+    outline: (
+      <>
+        <path d="m13 3 1.9 4.6L19.5 9.5 14.9 11.4 13 16l-1.9-4.6L6.5 9.5l4.6-1.9L13 3Z" />
+        <path d="m6 15 .9 2.1L9 18l-2.1.9L6 21l-.9-2.1L3 18l2.1-.9L6 15Z" />
+      </>
+    ),
+  },
+  shield: {
+    outline: (
+      <>
+        <path d="M12 3l7 3v5.5c0 4.3-2.9 8.1-7 9.5-4.1-1.4-7-5.2-7-9.5V6l7-3Z" />
+        <path d="m9 12 2 2 4-4" />
+      </>
+    ),
+  },
+  puzzle: {
+    outline: (
+      <path d="M10 3.5a1.5 1.5 0 0 1 3 0V5h3a1 1 0 0 1 1 1v3h1.5a1.5 1.5 0 0 1 0 3H17v3a1 1 0 0 1-1 1h-3v1.5a1.5 1.5 0 0 1-3 0V16H7a1 1 0 0 1-1-1v-3H4.5a1.5 1.5 0 0 1 0-3H6V6a1 1 0 0 1 1-1h3V3.5Z" />
+    ),
+  },
+  code: {
+    outline: (
+      <>
+        <path d="m8 7-5 5 5 5" />
+        <path d="m16 7 5 5-5 5" />
+        <path d="m13.5 4-3 16" />
+      </>
+    ),
+  },
 } satisfies Record<string, IconGlyph>;
 
 export type IconName = keyof typeof glyphs;

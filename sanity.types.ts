@@ -81,7 +81,15 @@ export type LearningOutcome = {
     | "lock"
     | "user"
     | "bell"
-    | "accessibility";
+    | "accessibility"
+    | "layers"
+    | "workflow"
+    | "gauge"
+    | "rocket"
+    | "sparkles"
+    | "shield"
+    | "puzzle"
+    | "code";
   title?: string;
   description?: string;
 };
@@ -190,7 +198,17 @@ export type Course = {
     alt?: string;
     _type: "image";
   };
-  glyph?: "nextjs" | "docker" | "typescript";
+  glyph?:
+    | "nextjs"
+    | "docker"
+    | "typescript"
+    | "react"
+    | "python"
+    | "postgres"
+    | "llm"
+    | "rag"
+    | "system-design"
+    | "security";
   level?: "beginner" | "intermediate" | "advanced";
   price?: number;
   popular?: boolean;
@@ -369,7 +387,18 @@ export type COURSES_CATALOG_QUERY_RESULT = Array<{
   title: string | null;
   slug: string | null;
   summary: string | null;
-  glyph: "docker" | "nextjs" | "typescript" | null;
+  glyph:
+    | "docker"
+    | "llm"
+    | "nextjs"
+    | "postgres"
+    | "python"
+    | "rag"
+    | "react"
+    | "security"
+    | "system-design"
+    | "typescript"
+    | null;
   level: "advanced" | "beginner" | "intermediate" | null;
   price: number | null;
   popular: boolean | null;
@@ -433,7 +462,18 @@ export type COURSE_BY_SLUG_QUERY_RESULT = {
   title: string | null;
   slug: string | null;
   summary: string | null;
-  glyph: "docker" | "nextjs" | "typescript" | null;
+  glyph:
+    | "docker"
+    | "llm"
+    | "nextjs"
+    | "postgres"
+    | "python"
+    | "rag"
+    | "react"
+    | "security"
+    | "system-design"
+    | "typescript"
+    | null;
   level: "advanced" | "beginner" | "intermediate" | null;
   price: number | null;
   popular: boolean | null;
@@ -489,15 +529,23 @@ export type COURSE_BY_SLUG_QUERY_RESULT = {
       | "bell"
       | "bookmark"
       | "clock"
+      | "code"
       | "eye"
       | "file"
       | "folder"
+      | "gauge"
       | "grid"
+      | "layers"
       | "lock"
+      | "puzzle"
+      | "rocket"
       | "search"
+      | "shield"
+      | "sparkles"
       | "star"
       | "target"
       | "user"
+      | "workflow"
       | null;
     title: string | null;
     description: string | null;
@@ -544,7 +592,18 @@ export type COURSES_BY_CATEGORY_QUERY_RESULT = Array<{
   title: string | null;
   slug: string | null;
   summary: string | null;
-  glyph: "docker" | "nextjs" | "typescript" | null;
+  glyph:
+    | "docker"
+    | "llm"
+    | "nextjs"
+    | "postgres"
+    | "python"
+    | "rag"
+    | "react"
+    | "security"
+    | "system-design"
+    | "typescript"
+    | null;
   level: "advanced" | "beginner" | "intermediate" | null;
   price: number | null;
   popular: boolean | null;
@@ -603,7 +662,18 @@ export type COURSES_BY_INSTRUCTOR_QUERY_RESULT = Array<{
   title: string | null;
   slug: string | null;
   summary: string | null;
-  glyph: "docker" | "nextjs" | "typescript" | null;
+  glyph:
+    | "docker"
+    | "llm"
+    | "nextjs"
+    | "postgres"
+    | "python"
+    | "rag"
+    | "react"
+    | "security"
+    | "system-design"
+    | "typescript"
+    | null;
   level: "advanced" | "beginner" | "intermediate" | null;
   price: number | null;
   popular: boolean | null;
@@ -700,7 +770,18 @@ export type LESSON_BY_SLUG_QUERY_RESULT = {
     _id: string;
     title: string | null;
     slug: string | null;
-    glyph: "docker" | "nextjs" | "typescript" | null;
+    glyph:
+      | "docker"
+      | "llm"
+      | "nextjs"
+      | "postgres"
+      | "python"
+      | "rag"
+      | "react"
+      | "security"
+      | "system-design"
+      | "typescript"
+      | null;
     level: "advanced" | "beginner" | "intermediate" | null;
     instructor: {
       _id: string;
@@ -772,7 +853,18 @@ export type INSTRUCTOR_BY_SLUG_QUERY_RESULT = {
     title: string | null;
     slug: string | null;
     summary: string | null;
-    glyph: "docker" | "nextjs" | "typescript" | null;
+    glyph:
+      | "docker"
+      | "llm"
+      | "nextjs"
+      | "postgres"
+      | "python"
+      | "rag"
+      | "react"
+      | "security"
+      | "system-design"
+      | "typescript"
+      | null;
     level: "advanced" | "beginner" | "intermediate" | null;
     price: number | null;
     popular: boolean | null;
