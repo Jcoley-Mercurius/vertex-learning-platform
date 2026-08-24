@@ -168,3 +168,38 @@ export const CATEGORIES_QUERY = defineQuery(/* groq */ `
 export const CATEGORY_SLUGS_QUERY = defineQuery(/* groq */ `
   *[_type == "category" && defined(slug.current)].slug.current
 `)
+
+/* ------------------------------------------------------------------ search */
+
+/**
+ * Hydrates the lesson ids the search agent ranked. The agent never writes a card
+ * field — it returns ids and an ordering, and every fact on the card comes from
+ * here (AGENTS.md section 11). An id that does not resolve simply drops out.
+ *
+ * The whole module skeleton of the owning course comes back so the route can
+ * derive the "Lesson 5.1 in Data Fetching and Caching" label; module and lesson
+ * numbers are positional, never stored. As on the lesson page, a lesson could be
+ * reused across courses, so `order(_id asc)` keeps the pick stable.
+ */
+export const SEARCH_LESSONS_BY_IDS_QUERY = defineQuery(/* groq */ `
+  *[_type == "lesson" && _id in $ids] {
+    _id,
+    title,
+    "slug": slug.current,
+    durationSeconds,
+    freePreview,
+    keyPoints,
+    poster { ${imageFragment} },
+    "course": *[_type == "course" && references(^._id)] | order(_id asc) [0] {
+      _id,
+      title,
+      "slug": slug.current,
+      glyph,
+      modules[] {
+        _key,
+        title,
+        "lessonIds": lessons[]._ref
+      }
+    }
+  }
+`)

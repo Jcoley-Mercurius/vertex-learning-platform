@@ -2,6 +2,10 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /* config options here */
+  images: {
+    // Every image comes from the Sanity asset CDN, via `urlFor()`.
+    remotePatterns: [{ protocol: "https", hostname: "cdn.sanity.io" }],
+  },
   async rewrites() {
     return [
       {
