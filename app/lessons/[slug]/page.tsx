@@ -8,12 +8,11 @@ import {
   LessonPlayer,
   LessonSidebar,
   LessonTabs,
-  LessonViewTracker,
   type AdjacentLesson,
   type LessonResource,
   type SidebarModule,
 } from "@/components/lesson";
-import { SiteHeader, type CourseGlyphName } from "@/components/site";
+import { SiteHeader, ViewTracker, type CourseGlyphName } from "@/components/site";
 import { Breadcrumbs } from "@/components/ui";
 import { lessonLabel } from "@/lib/format";
 import { parseVideoUrl, startSecondsFromParam } from "@/lib/video";
@@ -166,13 +165,24 @@ export default async function LessonPage({
     <>
       <SiteHeader />
 
-      <LessonViewTracker
-        lessonId={lesson._id}
-        lessonTitle={lessonTitle}
-        lessonLabel={label}
-        courseTitle={courseTitle}
-        freePreview={lesson.freePreview ?? false}
-        durationSeconds={durationSeconds}
+      <ViewTracker
+        event="lesson_viewed"
+        properties={{
+          lesson_id: lesson._id,
+          lesson_title: lessonTitle,
+          lesson_label: label,
+          lesson_slug: slug,
+          module_title: moduleTitle,
+          course_id: course._id,
+          course_title: courseTitle,
+          course_slug: course.slug ?? null,
+          free_preview: lesson.freePreview ?? false,
+          duration_seconds: durationSeconds,
+          has_video: video !== null,
+          /* Arrived from a search result's "watch from 4:20". */
+          deep_linked: startSeconds > 0,
+          start_seconds: startSeconds,
+        }}
       />
 
       <main className="flex-1">
@@ -215,6 +225,7 @@ export default async function LessonPage({
               posterAlt={lesson.poster?.alt ?? lessonTitle}
               title={lessonTitle}
               startSeconds={startSeconds}
+              durationSeconds={durationSeconds}
               analytics={analytics}
             />
 

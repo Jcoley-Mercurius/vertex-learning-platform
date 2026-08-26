@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import posthog from "posthog-js";
 
 import { Icon } from "@/components/ui";
@@ -16,6 +16,11 @@ import { formatTimestamp, type ParsedVideo } from "@/lib/video";
  * The poster is a click-to-play facade, so nothing is requested from YouTube
  * until the learner plays. The click then mounts the IFrame API player, which
  * is also what reports watch depth to PostHog.
+ *
+ * Watch depth is reported twice over: `video_milestone_reached` as the learner
+ * passes 25/50/75%, and one `video_watch_ended` when they leave. The milestones
+ * alone would hide everyone who stops between two of them — the closing event is
+ * what makes watch depth a distribution rather than three buckets.
  */
 
 type YouTubePlayer = {
@@ -83,6 +88,7 @@ export function LessonPlayer({
   posterAlt,
   title,
   startSeconds,
+  durationSeconds,
   analytics,
 }: {
   /** `null` when the lesson's URL is not a supported provider. */
@@ -92,6 +98,8 @@ export function LessonPlayer({
   posterAlt: string;
   title: string;
   startSeconds: number;
+  /** The lesson's authored runtime, reported alongside the player's own. */
+  durationSeconds: number;
   analytics: {
     lessonId: string;
     lessonTitle: string;
@@ -103,6 +111,45 @@ export function LessonPlayer({
   const mountRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<YouTubePlayer | null>(null);
   const reachedRef = useRef<number[]>([]);
+  /* The furthest point reached, kept outside React state so the closing capture
+     can read it during unmount without re-rendering on every tick. */
+  const depthRef = useRef({ seconds: 0, duration: 0, completed: false });
+  /* One `video_watch_ended` per visit, whichever of pagehide or unmount wins. */
+  const endedRef = useRef(false);
+
+  /* Every video event carries the same lesson identity plus how it was entered:
+     `deep_linked` is a search result's "watch from 4:20", the one resume-shaped
+     behaviour the app has today. */
+  const context = useMemo(
+    () => ({
+      ...analytics,
+      video_provider: video?.provider ?? null,
+      duration_seconds: durationSeconds,
+      start_seconds: startSeconds,
+      deep_linked: startSeconds > 0,
+    }),
+    [analytics, durationSeconds, startSeconds, video?.provider],
+  );
+
+  /**
+   * The closing watch-depth event. Fires once, on whichever of pagehide or
+   * unmount comes first, so leaving mid-video is still measured.
+   */
+  const endWatch = useCallback(() => {
+    if (endedRef.current) return;
+
+    const { seconds, duration, completed } = depthRef.current;
+    if (!seconds || !duration) return;
+
+    endedRef.current = true;
+
+    posthog.capture("video_watch_ended", {
+      ...context,
+      seconds_watched: Math.round(seconds),
+      percent_watched: Math.min(100, Math.round((seconds / duration) * 100)),
+      completed,
+    });
+  }, [context]);
 
   /* Milestones are checked on a timer: the IFrame API reports state changes,
      not position, so there is nothing else to hang watch depth off. */
@@ -113,15 +160,27 @@ export function LessonPlayer({
     const duration = player.getDuration();
     if (!duration) return;
 
-    const percent = (player.getCurrentTime() / duration) * 100;
+    const seconds = player.getCurrentTime();
+    const percent = (seconds / duration) * 100;
+
+    depthRef.current = {
+      // Furthest reached, so scrubbing backwards does not erase watch depth.
+      seconds: Math.max(depthRef.current.seconds, seconds),
+      duration,
+      completed: depthRef.current.completed,
+    };
 
     for (const milestone of MILESTONES) {
       if (percent >= milestone && !reachedRef.current.includes(milestone)) {
         reachedRef.current.push(milestone);
-        posthog.capture("video_progress", { ...analytics, percent: milestone });
+        posthog.capture("video_milestone_reached", {
+          ...context,
+          percent: milestone,
+          seconds_watched: Math.round(seconds),
+        });
       }
     }
-  }, [analytics]);
+  }, [context]);
 
   useEffect(() => {
     if (!playing) return;
@@ -130,18 +189,26 @@ export function LessonPlayer({
     return () => window.clearInterval(interval);
   }, [playing, trackProgress]);
 
+  /* pagehide covers closing the tab or a hard navigation, where unmount cleanup
+     is not guaranteed to run. */
+  useEffect(() => {
+    window.addEventListener("pagehide", endWatch);
+    return () => window.removeEventListener("pagehide", endWatch);
+  }, [endWatch]);
+
   useEffect(() => {
     return () => {
+      endWatch();
       playerRef.current?.destroy();
       playerRef.current = null;
     };
-  }, []);
+  }, [endWatch]);
 
   const play = useCallback(async () => {
     if (!video) return;
 
     setPlaying(true);
-    posthog.capture("video_played", { ...analytics, start_seconds: startSeconds });
+    posthog.capture("video_played", context);
 
     const api = await loadYouTubeApi();
     const mount = mountRef.current;
@@ -161,12 +228,20 @@ export function LessonPlayer({
       events: {
         onStateChange: (event) => {
           if (event.data === api.PlayerState.ENDED) {
-            posthog.capture("video_completed", analytics);
+            const runtime = playerRef.current?.getDuration() ?? 0;
+            depthRef.current = {
+              seconds: runtime || depthRef.current.seconds,
+              duration: runtime || depthRef.current.duration,
+              completed: true,
+            };
+            /* Until progress has a backend, finishing the video is the closest
+               thing the app has to a completed lesson. */
+            posthog.capture("video_completed", context);
           }
         },
       },
     });
-  }, [analytics, startSeconds, video]);
+  }, [context, startSeconds, video]);
 
   return (
     <div className="mt-8 overflow-hidden rounded-lg bg-neutral-900 shadow-md">

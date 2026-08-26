@@ -8,7 +8,7 @@ import {
   LearningOutcomes,
   type CurriculumModule,
 } from "@/components/course";
-import { AccentBars, SiteHeader } from "@/components/site";
+import { AccentBars, SiteHeader, ViewTracker } from "@/components/site";
 import { Breadcrumbs } from "@/components/ui";
 import { COURSE_BY_SLUG_QUERY, COURSE_SLUGS_QUERY } from "@/sanity/lib/queries";
 import { sanityFetch } from "@/sanity/lib/live";
@@ -90,6 +90,20 @@ export default async function CoursePage({ params }: PageProps<"/courses/[slug]"
   return (
     <>
       <SiteHeader />
+
+      <ViewTracker
+        event="course_viewed"
+        properties={{
+          course_id: course._id,
+          course_title: title,
+          course_slug: slug,
+          level: course.level ?? null,
+          popular: course.popular ?? false,
+          module_count: modules.length,
+          lesson_count: modules.reduce((total, module) => total + module.lessons.length, 0),
+          duration_seconds: course.durationSeconds ?? 0,
+        }}
+      />
 
       <main className="flex-1">
         <div className="mx-auto w-full max-w-[936px] px-6 pt-10">

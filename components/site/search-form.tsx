@@ -16,8 +16,14 @@ export function SearchForm() {
     const form = e.currentTarget;
     const query = (form.elements.namedItem("q") as HTMLInputElement)?.value ?? "";
 
+    const trimmed = query.trim();
+
     posthog.capture("search_submitted", {
-      query_length: query.length,
+      /* The query is what makes this event worth having: it is the only way to
+         see what learners ask for, and what the catalog has no answer to. */
+      query: trimmed.slice(0, 200),
+      query_length: trimmed.length,
+      source: "home_hero",
     });
 
     router.push(`/search?q=${encodeURIComponent(query)}`);
