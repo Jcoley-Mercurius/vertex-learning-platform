@@ -11,6 +11,7 @@ import {
 } from "@/lib/analytics";
 import { createSearchMcpClient, fetchInitialContext } from "@/lib/search/mcp";
 import { buildSystemPrompt } from "@/lib/search/prompt";
+import { resolveMoments, type MomentStats } from "@/lib/search/timestamps";
 import {
   MAX_QUERY_LENGTH,
   searchOutputSchema,
@@ -158,7 +159,7 @@ export async function POST(request: Request) {
       abortSignal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
 
-    const response = await buildResponse(output);
+    const { response, momentStats } = await buildResponse(output, query);
 
     await captureServerEvent(identity, "search_performed", {
       query: analyticsText(query),
@@ -170,6 +171,14 @@ export async function POST(request: Request) {
       has_results: response.resultCount > 0,
       duration_ms: Date.now() - startedAt,
       model: MODEL,
+      /* How the timestamps on those video cards were arrived at. A high
+         `moments_dropped` means the model is proposing seconds the dataset does
+         not contain, which is exactly what the resolver exists to catch. */
+      moments_verified: momentStats.verified,
+      moments_by_chapter: momentStats.resolvedByChapter,
+      moments_by_transcript: momentStats.resolvedByTranscript,
+      moments_promoted: momentStats.promoted,
+      moments_dropped: momentStats.dropped,
     });
 
     return NextResponse.json(response);
@@ -217,14 +226,23 @@ function failureReason(error: unknown) {
  * Turns the agent's ranked ids into cards. Anything the agent named that does not
  * resolve to a real lesson in a real course drops out here — that is the backstop
  * that keeps an invented result off the page.
+ *
+ * Timestamps get the same treatment. Whatever the agent proposed, the moment on a
+ * video card is resolved against the lesson's own video document — chapters
+ * first, transcript second (`lib/search/timestamps.ts`) — and a lesson with no
+ * resolvable moment is a lesson card, not a card with a guessed second on it.
  */
 async function buildResponse(
   output: Awaited<ReturnType<typeof searchOutputSchema.parseAsync>>,
-): Promise<SearchResponse> {
+  query: string,
+): Promise<{ response: SearchResponse; momentStats: MomentStats }> {
   const ranked = dedupe(output.results);
 
   if (ranked.length === 0) {
-    return { results: [], resultCount: 0, courseCount: 0, reply: output.reply ?? null };
+    return {
+      response: { results: [], resultCount: 0, courseCount: 0, reply: output.reply ?? null },
+      momentStats: EMPTY_MOMENT_STATS,
+    };
   }
 
   const lessons = await client.fetch(SEARCH_LESSONS_BY_IDS_QUERY, {
@@ -232,38 +250,64 @@ async function buildResponse(
   });
 
   const byId = new Map(lessons.map((lesson) => [lesson._id, lesson]));
-  const results: SearchResult[] = [];
-  const courseIds = new Set<string>();
 
-  for (const ranking of ranked) {
+  /* Rank order, narrowed to what actually exists. A lesson with no owning course
+     cannot be labelled or linked, so it is not a result. Neither is a lesson the
+     agent named that does not exist. */
+  const hydrated = ranked.flatMap((ranking) => {
     const lesson = byId.get(ranking.lessonId);
     const course = lesson?.course;
 
-    // A lesson with no owning course cannot be labelled or linked, so it is not
-    // a result. Neither is a lesson the agent named that does not exist.
-    if (!lesson?.slug || !course?.slug) continue;
+    if (!lesson?.slug || !course?.slug) return [];
 
+    /* The narrowed slugs travel with the row: the checks above do not survive
+       into the loop below, and a cast there would only hide that. */
+    return [{ ranking, lesson, course, lessonSlug: lesson.slug, courseSlug: course.slug }];
+  });
+
+  const { moments, stats } = await resolveMoments(
+    query,
+    hydrated.map(({ ranking }) => ({
+      lessonId: ranking.lessonId,
+      proposedStartSeconds: ranking.kind === "video" ? ranking.startSeconds : null,
+    })),
+  );
+
+  const results: SearchResult[] = [];
+  const courseIds = new Set<string>();
+
+  for (const { ranking, lesson, course, lessonSlug, courseSlug } of hydrated) {
     const durationSeconds = lesson.durationSeconds ?? 0;
     const base = {
       lessonId: lesson._id,
       description: ranking.description,
       lessonTitle: lesson.title ?? "Untitled lesson",
-      lessonSlug: lesson.slug,
+      lessonSlug,
       ...curriculumPosition(course.modules, lesson._id),
       courseTitle: course.title ?? "Untitled course",
-      courseSlug: course.slug,
+      courseSlug,
       courseGlyph: course.glyph ?? null,
       durationSeconds,
     };
 
-    if (ranking.kind === "video" && ranking.startSeconds !== null) {
+    const moment = moments.get(lesson._id);
+
+    if (moment) {
+      // Clamped: a timestamp past the runtime would seek nowhere.
+      const startSeconds = durationSeconds
+        ? Math.min(moment.startSeconds, durationSeconds)
+        : moment.startSeconds;
+      const remaining = durationSeconds ? durationSeconds - startSeconds : 0;
+
       results.push({
         ...base,
         kind: "video",
-        // Clamped: a timestamp past the runtime would seek nowhere.
-        startSeconds: durationSeconds
-          ? Math.min(ranking.startSeconds, durationSeconds)
-          : ranking.startSeconds,
+        startSeconds,
+        clipSeconds: remaining
+          ? Math.min(moment.clipSeconds || remaining, remaining)
+          : moment.clipSeconds,
+        chapterLabel: moment.chapterLabel,
+        matchSource: moment.source,
         posterUrl: lesson.poster?.asset?.url ?? null,
         posterAlt: lesson.poster?.alt ?? lesson.title ?? "",
       });
@@ -279,12 +323,24 @@ async function buildResponse(
   }
 
   return {
-    results,
-    resultCount: results.length,
-    courseCount: courseIds.size,
-    reply: output.reply ?? null,
+    response: {
+      results,
+      resultCount: results.length,
+      courseCount: courseIds.size,
+      reply: output.reply ?? null,
+    },
+    momentStats: stats,
   };
 }
+
+/** No lessons survived, so nothing was resolved either. */
+const EMPTY_MOMENT_STATS: MomentStats = {
+  verified: 0,
+  resolvedByChapter: 0,
+  resolvedByTranscript: 0,
+  promoted: 0,
+  dropped: 0,
+};
 
 /** The agent can name the same lesson twice across queries. First rank wins. */
 function dedupe(results: SearchResponseInput) {

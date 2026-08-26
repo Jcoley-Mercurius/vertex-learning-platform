@@ -88,7 +88,11 @@ export function LessonContent({
       {resources.length > 0 ? (
         <section className="mt-9 border-t border-neutral-200 pt-9">
           <h2 className="font-display text-heading-2 font-medium text-neutral-900">Resources</h2>
-          <ul className="mt-5 grid sm:grid-cols-2 gap-5">
+          {/* Width-aware rather than viewport-aware: the lesson column is much
+              narrower than the page, so a viewport breakpoint would keep forcing
+              two columns at widths where a resource title has no room to wrap
+              cleanly. auto-fit drops to one card per row instead. */}
+          <ul className="mt-5 grid grid-cols-[repeat(auto-fit,minmax(15rem,1fr))] gap-5">
             {resources.map((resource) => (
               <li key={resource._key}>
                 <ResourceLink resource={resource} />
@@ -111,24 +115,38 @@ function ResourceLink({ resource }: { resource: LessonResource }) {
   const icon = resourceIcons[resource.type ?? "link"] ?? "file";
   const title = resource.title ?? "Untitled resource";
 
-  /* The title row and the description are separate blocks rather than one
-     text column beside the icon: at this column width, sharing the row with
-     the icon tile and the external-link glyph squeezed the copy to a word a
-     line. */
+  /* The title row and the description are separate blocks rather than one text
+     column beside the icon: at this column width, sharing the row with the icon
+     tile squeezed the copy to a word a line.
+
+     The title carries `break-words` but deliberately not `text-balance`. The two
+     together let the balancer settle on an extremely narrow measure — it is free
+     to break mid-word, so it does — which is what shattered a title like "Claude
+     API documentation" into one character per line.
+
+     The external-link glyph sits with the description rather than in the title
+     row, as the reference draws it, so the title gets the full width beside the
+     icon. */
   const body = (
     <>
       <span className="flex items-start gap-4">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm bg-primary-100 text-primary-500">
           <Icon name={icon} size={20} />
         </span>
-        <span className="min-w-0 flex-1 text-body-lg font-medium break-words text-balance text-neutral-900">
+        <span className="min-w-0 flex-1 text-body-lg leading-snug font-medium break-words text-neutral-900">
           {title}
         </span>
-        <Icon name="external-link" size={18} className="mt-1 shrink-0 text-primary-500" />
       </span>
-      {resource.description ? (
-        <span className="mt-3 block text-body break-words text-neutral-500">
-          {resource.description}
+
+      {resource.description || resource.url ? (
+        <span className="mt-3 flex items-end justify-between gap-3">
+          <span className="min-w-0 flex-1 text-body break-words text-neutral-500">
+            {resource.description}
+          </span>
+          {/* Only a card that actually links out gets the glyph. */}
+          {resource.url ? (
+            <Icon name="external-link" size={18} className="shrink-0 text-primary-500" />
+          ) : null}
         </span>
       ) : null}
     </>

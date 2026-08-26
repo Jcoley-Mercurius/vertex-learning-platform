@@ -203,3 +203,42 @@ export const SEARCH_LESSONS_BY_IDS_QUERY = defineQuery(/* groq */ `
     }
   }
 `)
+
+/**
+ * The second stage of a search: where inside each matched lesson's video the
+ * query is actually taught.
+ *
+ * A lesson stores no reference to its video, so the join is on the URL. The
+ * route resolves the moment from what comes back here — chapters first, the
+ * transcript as the fallback (AGENTS.md section 7) — which is what keeps a
+ * timestamp on a card a number that exists in the dataset rather than one the
+ * model wrote.
+ *
+ * `chapters` comes back whole because a table of contents is a couple of dozen
+ * entries; the transcript never does. `chunks` is filtered inside the array and
+ * sliced, because returning it whole would be thousands of lines of speech
+ * (AGENTS.md section 12).
+ *
+ * The six `$t` parameters are the query's keywords, wildcarded. GROQ's `match`
+ * ANDs an array of patterns, so an OR has to be spelled out — and a fixed number
+ * of slots keeps the query static enough for TypeGen. Unused slots are padded
+ * with a pattern that matches nothing.
+ */
+export const SEARCH_VIDEO_MOMENTS_QUERY = defineQuery(/* groq */ `
+  *[_type == "lesson" && _id in $ids] {
+    _id,
+    durationSeconds,
+    "video": *[_type == "video" && url == ^.videoUrl][0] {
+      "runtimeSeconds": durationSeconds,
+      "chapters": chapters[] { startSeconds, label },
+      "matchedChunks": chunks[
+        text match $t0 ||
+        text match $t1 ||
+        text match $t2 ||
+        text match $t3 ||
+        text match $t4 ||
+        text match $t5
+      ][0...3] { startSeconds, text }
+    }
+  }
+`)

@@ -98,7 +98,25 @@ export function SearchResultCard({
                 course_slug: result.courseSlug,
                 duration_seconds: result.durationSeconds,
                 start_seconds: isVideo ? result.startSeconds : null,
+                clip_seconds: isVideo ? result.clipSeconds : null,
+                /* Which stage of the two-stage resolution produced the moment:
+                   the video's chapters, or its transcript. */
+                match_source: isVideo ? result.matchSource : null,
+                chapter_label: isVideo ? result.chapterLabel : null,
               })
+            }
+            /* The visible link text is the lesson title, so the moment it opens
+               at — and the chapter it sits in — belong in the accessible name. */
+            aria-label={
+              isVideo
+                ? [
+                    result.lessonTitle,
+                    `from ${formatTimestamp(result.startSeconds)}`,
+                    result.chapterLabel,
+                  ]
+                    .filter(Boolean)
+                    .join(", ")
+                : undefined
             }
             className={cn(
               "after:absolute after:inset-0 after:rounded-lg focus-visible:outline-none",
@@ -204,9 +222,12 @@ function VideoPanel({
         <Icon name="play-circle" variant="filled" size={28} />
       </span>
 
-      {result.durationSeconds > 0 ? (
+      {/* The clip length, not the lesson runtime: a video result is a moment
+          inside the lesson, and how long that moment runs is what tells the
+          learner what they are about to watch (AGENTS.md section 11). */}
+      {result.clipSeconds > 0 ? (
         <span className="absolute right-3 bottom-3 rounded-xs bg-neutral-900/85 px-2 py-1 text-small font-medium text-white">
-          {formatTimestamp(result.durationSeconds)}
+          {formatTimestamp(result.clipSeconds)}
         </span>
       ) : null}
     </div>

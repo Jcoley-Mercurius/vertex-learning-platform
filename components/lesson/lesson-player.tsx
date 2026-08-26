@@ -26,6 +26,7 @@ import { formatTimestamp, type ParsedVideo } from "@/lib/video";
 type YouTubePlayer = {
   getCurrentTime: () => number;
   getDuration: () => number;
+  seekTo: (seconds: number, allowSeekAhead: boolean) => void;
   destroy: () => void;
 };
 
@@ -116,6 +117,9 @@ export function LessonPlayer({
   const depthRef = useRef({ seconds: 0, duration: 0, completed: false });
   /* One `video_watch_ended` per visit, whichever of pagehide or unmount wins. */
   const endedRef = useRef(false);
+  /* The second the mounted player was last sent to, so a new deep link into a
+     lesson that is already playing can be told apart from a re-render. */
+  const seekedToRef = useRef(startSeconds);
 
   /* Every video event carries the same lesson identity plus how it was entered:
      `deep_linked` is a search result's "watch from 4:20", the one resume-shaped
@@ -202,6 +206,18 @@ export function LessonPlayer({
     return () => window.clearInterval(interval);
   }, [playing, trackProgress]);
 
+  /* A second search result for the same lesson is a client-side navigation: the
+     page re-renders with a new `?t=`, but this component and its player survive,
+     so `playerVars.start` never runs again. Seek the live player instead. */
+  useEffect(() => {
+    const player = playerRef.current;
+
+    if (!player || startSeconds === seekedToRef.current) return;
+
+    seekedToRef.current = startSeconds;
+    player.seekTo(startSeconds, true);
+  }, [startSeconds]);
+
   /* pagehide covers closing the tab or a hard navigation, where unmount cleanup
      is not guaranteed to run. */
   useEffect(() => {
@@ -221,6 +237,7 @@ export function LessonPlayer({
     if (!video) return;
 
     setPlaying(true);
+    seekedToRef.current = startSeconds;
     posthog.capture("video_played", context);
 
     const api = await loadYouTubeApi();
