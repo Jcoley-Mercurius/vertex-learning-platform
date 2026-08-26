@@ -14,9 +14,13 @@
     "seed:transform": "node scripts/seed/transform.mjs \"${TMPDIR:-/tmp}/vertex-seed.import.ndjson\"",
     "seed:covers": "node scripts/seed/covers.mjs",
     "seed": "npm run seed:transform && npm run seed:import",
-    "seed:import": "set -a && . ./.env.local && set +a && sanity dataset import --replace \"${TMPDIR:-/tmp}/vertex-seed.import.ndjson\" --dataset \"$SANITY_STUDIO_DATASET\""
+    "seed:import": "set -a && . ./.env.local && set +a && sanity dataset import --replace \"${TMPDIR:-/tmp}/vertex-seed.import.ndjson\" --dataset \"$SANITY_STUDIO_DATASET\"",
+    "videos:ingest": "set -a && . ./.env.local && set +a && node scripts/videos/ingest.mjs \"${TMPDIR:-/tmp}/vertex-videos.ndjson\"",
+    "videos:import": "set -a && . ./.env.local && set +a && sanity dataset import --replace \"${TMPDIR:-/tmp}/vertex-videos.ndjson\" --dataset \"$SANITY_STUDIO_DATASET\"",
+    "videos": "npm run videos:ingest && npm run videos:import"
   },
   "dependencies": {
+    "@sanity/client": "^7.26.2",
     "@sanity/icons": "^3.8.0",
     "@sanity/vision": "^5.31.2",
     "react": "^19.2.8",

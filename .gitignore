@@ -50,3 +50,6 @@ next-env.d.ts
 # vendored agent skills (restore from skills-lock.json)
 /.agents/
 /agent/
+
+# video ingestion cache (raw yt-dlp output, refetchable)
+/studio/scripts/videos/.cache

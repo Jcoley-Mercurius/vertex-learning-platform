@@ -3,6 +3,12 @@ import { Output, generateText, stepCountIs } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { auth } from "@clerk/nextjs/server";
 
+import {
+  analyticsText,
+  captureServerEvent,
+  captureServerException,
+  resolveIdentity,
+} from "@/lib/analytics";
 import { createSearchMcpClient, fetchInitialContext } from "@/lib/search/mcp";
 import { buildSystemPrompt } from "@/lib/search/prompt";
 import {
@@ -22,6 +28,11 @@ import { SEARCH_LESSONS_BY_IDS_QUERY } from "@/sanity/lib/queries";
  * The browser never touches the MCP, the model or a token — it only POSTs a query
  * here. The model only ever chooses lesson ids and an ordering; every fact on a
  * card is read back out of Sanity below.
+ *
+ * This is also where `search_performed` is captured. Search happens here, so the
+ * server is the only place that knows the latency and the real result mix, and
+ * the browser correlates itself onto the event with the PostHog headers it sends
+ * (`lib/analytics.ts`).
  */
 
 /** The MCP client and the Sanity client both need Node, not the edge runtime. */
@@ -59,7 +70,13 @@ function checkRateLimit(identifier: string): boolean {
   return true;
 }
 
+/** Named once so both the call and the analytics property read the same value. */
+const MODEL = "gpt-5";
+
 export async function POST(request: Request) {
+  const startedAt = Date.now();
+  const identity = await resolveIdentity(request);
+
   // Require authentication before processing any search request.
   const { userId } = await auth();
 
@@ -123,7 +140,7 @@ export async function POST(request: Request) {
     );
 
     const { output } = await generateText({
-      model: openai("gpt-5"),
+      model: openai(MODEL),
       system: buildSystemPrompt(initialContext),
       prompt: query,
       tools,
@@ -141,9 +158,32 @@ export async function POST(request: Request) {
       abortSignal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
 
-    return NextResponse.json(await buildResponse(output));
+    const response = await buildResponse(output);
+
+    await captureServerEvent(identity, "search_performed", {
+      query: analyticsText(query),
+      query_length: query.length,
+      result_count: response.resultCount,
+      course_count: response.courseCount,
+      video_result_count: countKind(response, "video"),
+      lesson_result_count: countKind(response, "lesson"),
+      has_results: response.resultCount > 0,
+      duration_ms: Date.now() - startedAt,
+      model: MODEL,
+    });
+
+    return NextResponse.json(response);
   } catch (error) {
     console.error("Search failed", error);
+
+    // The query text is deliberately left off a failure: a search that never ran
+    // says nothing about what learners look for, only that the route broke.
+    await captureServerEvent(identity, "search_failed", {
+      query_length: query.length,
+      reason: failureReason(error),
+      duration_ms: Date.now() - startedAt,
+    });
+    await captureServerException(identity, error);
 
     return NextResponse.json(
       { error: "Search is unavailable right now. Please try again." },
@@ -152,6 +192,25 @@ export async function POST(request: Request) {
   } finally {
     await mcpClient?.close().catch(() => {});
   }
+}
+
+/** How many of the returned cards are of one kind. */
+function countKind(response: SearchResponse, kind: SearchResult["kind"]) {
+  return response.results.filter((result) => result.kind === kind).length;
+}
+
+/**
+ * Which stage of the search broke, coarse enough to group on in PostHog and
+ * never carrying the underlying message as a property.
+ */
+function failureReason(error: unknown) {
+  if (error instanceof Error) {
+    if (error.name === "TimeoutError" || error.name === "AbortError") return "timeout";
+    if (/mcp|context/i.test(error.message)) return "mcp";
+    if (/model|openai|schema|output/i.test(error.message)) return "model";
+  }
+
+  return "unknown";
 }
 
 /**
@@ -190,7 +249,7 @@ async function buildResponse(
       description: ranking.description,
       lessonTitle: lesson.title ?? "Untitled lesson",
       lessonSlug: lesson.slug,
-      lessonLabel: lessonLabel(course.modules, lesson._id, course.title),
+      ...curriculumPosition(course.modules, lesson._id),
       courseTitle: course.title ?? "Untitled course",
       courseSlug: course.slug,
       courseGlyph: course.glyph ?? null,
@@ -243,25 +302,26 @@ type SearchResponseInput = Awaited<
 >["results"];
 
 /**
- * "Lesson 5.1 in Data Fetching and Caching". Module and lesson numbers are
- * positional and never stored (AGENTS.md section 8), so they are counted off the
- * curriculum here. A lesson missing from its course's modules falls back to the
- * course title alone rather than claiming a position it does not have.
+ * Where the lesson sits in its course: "Lesson 5.1", "Module 5", and the module's
+ * own title. Module and lesson numbers are positional and never stored
+ * (AGENTS.md section 8), so they are counted off the curriculum here. A lesson
+ * missing from its course's modules gets nulls rather than a made-up position.
  */
-function lessonLabel(
+function curriculumPosition(
   modules: { title: string | null; lessonIds: string[] | null }[] | null,
   lessonId: string,
-  courseTitle: string | null,
 ) {
-  const fallback = courseTitle ?? "this course";
-
   for (const [moduleIndex, module] of (modules ?? []).entries()) {
     const lessonIndex = (module.lessonIds ?? []).indexOf(lessonId);
 
     if (lessonIndex !== -1) {
-      return `Lesson ${moduleIndex + 1}.${lessonIndex + 1} in ${module.title ?? fallback}`;
+      return {
+        lessonNumber: `Lesson ${moduleIndex + 1}.${lessonIndex + 1}`,
+        moduleNumber: `Module ${moduleIndex + 1}`,
+        moduleTitle: module.title ?? null,
+      };
     }
   }
 
-  return fallback;
+  return { lessonNumber: null, moduleNumber: null, moduleTitle: null };
 }

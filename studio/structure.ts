@@ -1,5 +1,5 @@
 import type {StructureResolver} from 'sanity/structure'
-import {BookIcon, PlayIcon, TagIcon, UserIcon} from '@sanity/icons'
+import {BookIcon, DocumentVideoIcon, PlayIcon, TagIcon, UserIcon} from '@sanity/icons'
 
 export const structure: StructureResolver = (S) =>
   S.list()
@@ -10,4 +10,8 @@ export const structure: StructureResolver = (S) =>
       S.divider(),
       S.documentTypeListItem('instructor').title('Instructors').icon(UserIcon),
       S.documentTypeListItem('category').title('Categories').icon(TagIcon),
+      S.divider(),
+      // Built by the ingestion pipeline and read only. Listed last because it is
+      // an internal lookup for search, not something an author edits.
+      S.documentTypeListItem('video').title('Videos').icon(DocumentVideoIcon),
     ])

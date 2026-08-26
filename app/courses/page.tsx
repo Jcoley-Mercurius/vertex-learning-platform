@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { CourseGlyph, SiteHeader } from "@/components/site";
+import { CourseGlyph, SiteHeader, ViewTracker } from "@/components/site";
 import { CourseCard } from "@/components/ui";
 import { formatDuration, formatLevel, pluralize } from "@/lib/format";
 import { COURSES_CATALOG_QUERY } from "@/sanity/lib/queries";
@@ -27,6 +27,8 @@ export default async function CoursesPage() {
   return (
     <>
       <SiteHeader />
+
+      <ViewTracker event="catalog_viewed" properties={{ course_count: courses.length }} />
 
       <main className="flex-1">
         <div className="mx-auto w-full max-w-[936px] px-6 pt-10 pb-24">

@@ -8,4 +8,3 @@ export {
 export { LessonTabs } from "./lesson-tabs";
 export { LessonContent, type LessonResource } from "./lesson-content";
 export { LessonNav, type AdjacentLesson } from "./lesson-nav";
-export { LessonViewTracker } from "./lesson-view-tracker";

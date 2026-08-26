@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import type { CourseGlyphName } from "@/components/site/course-glyph";
+
 /**
  * The contract between the search agent and the route.
  *
@@ -68,11 +70,15 @@ type SearchResultBase = {
   description: string;
   lessonTitle: string;
   lessonSlug: string;
-  /** "Lesson 5.1 in Data Fetching and Caching". */
-  lessonLabel: string;
+  /** "Lesson 5.1" — positional, derived from the curriculum, never stored. */
+  lessonNumber: string | null;
+  /** "Module 5" — the same position, as the lesson rows label it. */
+  moduleNumber: string | null;
+  /** The owning module's own title, e.g. "Data Fetching & Caching". */
+  moduleTitle: string | null;
   courseTitle: string;
   courseSlug: string;
-  courseGlyph: string | null;
+  courseGlyph: CourseGlyphName | null;
   durationSeconds: number;
 };
 
