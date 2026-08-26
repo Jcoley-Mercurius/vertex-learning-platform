@@ -212,11 +212,11 @@ export function LessonPlayer({
   useEffect(() => {
     const player = playerRef.current;
 
-    if (!player || startSeconds === seekedToRef.current) return;
+    if (!player || !playing || startSeconds === seekedToRef.current) return;
 
     seekedToRef.current = startSeconds;
     player.seekTo(startSeconds, true);
-  }, [startSeconds]);
+  }, [playing, startSeconds]);
 
   /* pagehide covers closing the tab or a hard navigation, where unmount cleanup
      is not guaranteed to run. */
@@ -237,8 +237,10 @@ export function LessonPlayer({
     if (!video) return;
 
     setPlaying(true);
-    seekedToRef.current = startSeconds;
     posthog.capture("video_played", context);
+
+    // Capture the latest startSeconds before awaiting the API.
+    const initialStartSeconds = startSeconds;
 
     const api = await loadYouTubeApi();
     const mount = mountRef.current;
@@ -252,10 +254,19 @@ export function LessonPlayer({
         rel: 0,
         modestbranding: 1,
         playsinline: 1,
-        start: startSeconds,
+        start: initialStartSeconds,
         origin: window.location.origin,
       },
       events: {
+        onReady: () => {
+          // Apply the current startSeconds after player construction, even if it changed.
+          if (playerRef.current && startSeconds !== initialStartSeconds) {
+            playerRef.current.seekTo(startSeconds, true);
+            seekedToRef.current = startSeconds;
+          } else {
+            seekedToRef.current = initialStartSeconds;
+          }
+        },
         onStateChange: (event) => {
           if (event.data === api.PlayerState.ENDED) {
             const runtime = playerRef.current?.getDuration() ?? 0;

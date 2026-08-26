@@ -131,7 +131,9 @@ already the right shape), the lesson page's `?t=` parsing, the search page shell
   document — a chapter's or a chunk's — never a model-authored number that was not found
   there.
 - Chapters are matched before chunks, per lesson, always.
-- No query ever returns a whole `chunks` or `chapters` array to the route or the model.
+- The route receives the compact chapter index for containing-chapter and clip-end
+  calculations; transcript chunks remain filtered and sliced, never returning the full
+  chunks or chapters arrays.
 - A lesson whose moment cannot be resolved still appears, as a lesson result.
 - A lesson id the model returns that does not resolve to a lesson in a course still drops
   out, exactly as today.

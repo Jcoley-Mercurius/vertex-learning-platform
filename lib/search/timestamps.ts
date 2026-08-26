@@ -179,16 +179,19 @@ export async function resolveMoments(
     }
 
     const chapters = (video.chapters ?? [])
+      .filter((chapter) => chapter.startSeconds != null)
       .map((chapter) => ({
-        startSeconds: chapter.startSeconds ?? 0,
+        startSeconds: chapter.startSeconds as number,
         label: chapter.label ?? null,
       }))
       .sort((a, b) => a.startSeconds - b.startSeconds);
 
-    const chunks = (video.matchedChunks ?? []).map((chunk) => ({
-      startSeconds: chunk.startSeconds ?? 0,
-      text: chunk.text ?? "",
-    }));
+    const chunks = (video.matchedChunks ?? [])
+      .filter((chunk) => chunk.startSeconds != null)
+      .map((chunk) => ({
+        startSeconds: chunk.startSeconds as number,
+        text: chunk.text ?? "",
+      }));
 
     /* The runtime the clip length is measured against. The lesson's own duration
        is the one the UI trusts (the source's may differ), with the video's as the
