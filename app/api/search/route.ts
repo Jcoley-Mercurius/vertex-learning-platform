@@ -11,6 +11,7 @@ import {
 } from "@/lib/analytics";
 import { createSearchMcpClient, fetchInitialContext } from "@/lib/search/mcp";
 import { buildSystemPrompt } from "@/lib/search/prompt";
+import { resolveMoments, type MomentStats } from "@/lib/search/timestamps";
 import {
   MAX_QUERY_LENGTH,
   searchOutputSchema,
@@ -44,6 +45,19 @@ export const runtime = "nodejs";
  * tight cap can end the loop before it emits the final ranked object.
  */
 const MAX_STEPS = 12;
+
+/**
+ * The last turn is reserved for the answer.
+ *
+ * `stopWhen` stops the loop, it does not ask the model to wrap up. A model still
+ * calling tools on its final allowed step is cut off with no structured output at
+ * all, and `output` then throws `AI_NoOutputGeneratedError` — a 502 on a search
+ * that had already found its lessons. Taking the tools away on the last step
+ * turns that into an answer built from whatever it has.
+ */
+function reserveLastStepForOutput({ stepNumber }: { stepNumber: number }) {
+  return stepNumber >= MAX_STEPS - 1 ? { toolChoice: "none" as const } : {};
+}
 
 /** A search that has not landed by now is not worth making the learner wait for. */
 const REQUEST_TIMEOUT_MS = 60_000;
@@ -149,6 +163,7 @@ export async function POST(request: Request) {
       prompt: query,
       tools,
       stopWhen: stepCountIs(MAX_STEPS),
+      prepareStep: reserveLastStepForOutput,
       output: Output.object({
         schema: searchOutputSchema,
         name: "search_results",
@@ -182,7 +197,7 @@ export async function POST(request: Request) {
       } satisfies SearchResponse);
     }
 
-    const response = await buildResponse(result.output);
+    const { response, momentStats } = await buildResponse(result.output, query);
 
     await captureServerEvent(identity, "search_performed", {
       query: analyticsText(query),
@@ -194,6 +209,14 @@ export async function POST(request: Request) {
       has_results: response.resultCount > 0,
       duration_ms: Date.now() - startedAt,
       model: MODEL,
+      /* How the timestamps on those video cards were arrived at. A high
+         `moments_dropped` means the model is proposing seconds the dataset does
+         not contain, which is exactly what the resolver exists to catch. */
+      moments_verified: momentStats.verified,
+      moments_by_chapter: momentStats.resolvedByChapter,
+      moments_by_transcript: momentStats.resolvedByTranscript,
+      moments_promoted: momentStats.promoted,
+      moments_dropped: momentStats.dropped,
     });
 
     return NextResponse.json(response);
@@ -245,14 +268,23 @@ function failureReason(error: unknown) {
  * Turns the agent's ranked ids into cards. Anything the agent named that does not
  * resolve to a real lesson in a real course drops out here — that is the backstop
  * that keeps an invented result off the page.
+ *
+ * Timestamps get the same treatment. Whatever the agent proposed, the moment on a
+ * video card is resolved against the lesson's own video document — chapters
+ * first, transcript second (`lib/search/timestamps.ts`) — and a lesson with no
+ * resolvable moment is a lesson card, not a card with a guessed second on it.
  */
 async function buildResponse(
   output: Awaited<ReturnType<typeof searchOutputSchema.parseAsync>>,
-): Promise<SearchResponse> {
+  query: string,
+): Promise<{ response: SearchResponse; momentStats: MomentStats }> {
   const ranked = dedupe(output.results);
 
   if (ranked.length === 0) {
-    return { results: [], resultCount: 0, courseCount: 0, reply: output.reply ?? null };
+    return {
+      response: { results: [], resultCount: 0, courseCount: 0, reply: output.reply ?? null },
+      momentStats: EMPTY_MOMENT_STATS,
+    };
   }
 
   const lessons = await client.fetch(SEARCH_LESSONS_BY_IDS_QUERY, {
@@ -260,41 +292,74 @@ async function buildResponse(
   });
 
   const byId = new Map(lessons.map((lesson) => [lesson._id, lesson]));
-  const results: SearchResult[] = [];
-  const courseIds = new Set<string>();
 
-  for (const ranking of ranked) {
+  /* Rank order, narrowed to what actually exists. A lesson with no owning course
+     cannot be labelled or linked, so it is not a result. Neither is a lesson the
+     agent named that does not exist. */
+  const hydrated = ranked.flatMap((ranking) => {
     const lesson = byId.get(ranking.lessonId);
     const course = lesson?.course;
 
-    // A lesson with no owning course cannot be labelled or linked, so it is not
-    // a result. Neither is a lesson the agent named that does not exist.
-    if (!lesson?.slug || !course?.slug) continue;
+    if (!lesson?.slug || !course?.slug) return [];
 
+    /* The narrowed slugs travel with the row: the checks above do not survive
+       into the loop below, and a cast there would only hide that. */
+    return [{ ranking, lesson, course, lessonSlug: lesson.slug, courseSlug: course.slug }];
+  });
+
+  const { moments, stats } = await resolveMoments(
+    query,
+    hydrated.map(({ ranking }) => ({
+      lessonId: ranking.lessonId,
+      proposedStartSeconds: ranking.kind === "video" ? ranking.startSeconds : null,
+    })),
+  );
+
+  const results: SearchResult[] = [];
+  const courseIds = new Set<string>();
+
+  for (const { ranking, lesson, course, lessonSlug, courseSlug } of hydrated) {
     const durationSeconds = lesson.durationSeconds ?? 0;
     const base = {
       lessonId: lesson._id,
       description: ranking.description,
       lessonTitle: lesson.title ?? "Untitled lesson",
-      lessonSlug: lesson.slug,
+      lessonSlug,
       ...curriculumPosition(course.modules, lesson._id),
       courseTitle: course.title ?? "Untitled course",
-      courseSlug: course.slug,
+      courseSlug,
       courseGlyph: course.glyph ?? null,
       durationSeconds,
     };
 
-    if (ranking.kind === "video" && ranking.startSeconds !== null) {
-      results.push({
-        ...base,
-        kind: "video",
-        // Clamped: a timestamp past the runtime would seek nowhere.
-        startSeconds: durationSeconds
-          ? Math.min(ranking.startSeconds, durationSeconds)
-          : ranking.startSeconds,
-        posterUrl: lesson.poster?.asset?.url ?? null,
-        posterAlt: lesson.poster?.alt ?? lesson.title ?? "",
-      });
+    const moment = moments.get(lesson._id);
+
+    if (moment) {
+      // Reject moments whose stored startSeconds is outside the lesson runtime.
+      if (durationSeconds && moment.startSeconds >= durationSeconds) {
+        results.push({
+          ...base,
+          kind: "lesson",
+          keyPoints: (lesson.keyPoints ?? []).filter((point): point is string => !!point),
+        });
+      } else {
+        // Preserve the original moment.startSeconds and cap the clip end at runtime.
+        const clipEnd = durationSeconds
+          ? Math.min(moment.startSeconds + (moment.clipSeconds || 0), durationSeconds)
+          : moment.startSeconds + (moment.clipSeconds || 0);
+        const clipSeconds = clipEnd > moment.startSeconds ? clipEnd - moment.startSeconds : 0;
+
+        results.push({
+          ...base,
+          kind: "video",
+          startSeconds: moment.startSeconds,
+          clipSeconds,
+          chapterLabel: moment.chapterLabel,
+          matchSource: moment.source,
+          posterUrl: lesson.poster?.asset?.url ?? null,
+          posterAlt: lesson.poster?.alt ?? lesson.title ?? "",
+        });
+      }
     } else {
       results.push({
         ...base,
@@ -307,12 +372,24 @@ async function buildResponse(
   }
 
   return {
-    results,
-    resultCount: results.length,
-    courseCount: courseIds.size,
-    reply: output.reply ?? null,
+    response: {
+      results,
+      resultCount: results.length,
+      courseCount: courseIds.size,
+      reply: output.reply ?? null,
+    },
+    momentStats: stats,
   };
 }
+
+/** No lessons survived, so nothing was resolved either. */
+const EMPTY_MOMENT_STATS: MomentStats = {
+  verified: 0,
+  resolvedByChapter: 0,
+  resolvedByTranscript: 0,
+  promoted: 0,
+  dropped: 0,
+};
 
 /** The agent can name the same lesson twice across queries. First rank wins. */
 function dedupe(results: SearchResponseInput) {
