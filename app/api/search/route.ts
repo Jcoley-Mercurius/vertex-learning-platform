@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { Output, generateText, stepCountIs } from "ai";
+import { NoOutputGeneratedError, Output, generateText, stepCountIs } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { auth } from "@clerk/nextjs/server";
 
@@ -39,8 +39,12 @@ import { SEARCH_LESSONS_BY_IDS_QUERY } from "@/sanity/lib/queries";
 /** The MCP client and the Sanity client both need Node, not the edge runtime. */
 export const runtime = "nodejs";
 
-/** Enough turns for a broad query plus a follow-up, without unbounded cost. */
-const MAX_STEPS = 8;
+/**
+ * Enough turns for a broad query plus a follow-up, without unbounded cost. The
+ * model spends most turns writing and refining GROQ against the Sanity MCP, so a
+ * tight cap can end the loop before it emits the final ranked object.
+ */
+const MAX_STEPS = 12;
 
 /**
  * The last turn is reserved for the answer.
@@ -153,7 +157,7 @@ export async function POST(request: Request) {
       ),
     );
 
-    const { output } = await generateText({
+    const result = await generateText({
       model: openai(MODEL),
       system: buildSystemPrompt(initialContext),
       prompt: query,
@@ -173,7 +177,27 @@ export async function POST(request: Request) {
       abortSignal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
 
-    const { response, momentStats } = await buildResponse(output, query);
+    // The tool loop can reach the step cap before the model emits its
+    // `search_results` object. Only a clean "stop" finish carries that object;
+    // reading `result.output` after any other finish throws
+    // AI_NoOutputGeneratedError. A capped run degrades to an empty result set
+    // plus the agent's last reply, never a 502.
+    if (result.finishReason !== "stop") {
+      await captureServerEvent(identity, "search_failed", {
+        query_length: query.length,
+        reason: "no_output",
+        duration_ms: Date.now() - startedAt,
+      });
+
+      return NextResponse.json({
+        results: [],
+        resultCount: 0,
+        courseCount: 0,
+        reply: result.text || null,
+      } satisfies SearchResponse);
+    }
+
+    const { response, momentStats } = await buildResponse(result.output, query);
 
     await captureServerEvent(identity, "search_performed", {
       query: analyticsText(query),
@@ -227,6 +251,10 @@ function countKind(response: SearchResponse, kind: SearchResult["kind"]) {
  * never carrying the underlying message as a property.
  */
 function failureReason(error: unknown) {
+  // The agent finished its tool loop without emitting the structured output. This
+  // is its own bucket, kept apart from the provider errors that "model" holds.
+  if (NoOutputGeneratedError.isInstance(error)) return "no_output";
+
   if (error instanceof Error) {
     if (error.name === "TimeoutError" || error.name === "AbortError") return "timeout";
     if (/mcp|context/i.test(error.message)) return "mcp";
