@@ -42,6 +42,19 @@ export const runtime = "nodejs";
 /** Enough turns for a broad query plus a follow-up, without unbounded cost. */
 const MAX_STEPS = 8;
 
+/**
+ * The last turn is reserved for the answer.
+ *
+ * `stopWhen` stops the loop, it does not ask the model to wrap up. A model still
+ * calling tools on its final allowed step is cut off with no structured output at
+ * all, and `output` then throws `AI_NoOutputGeneratedError` — a 502 on a search
+ * that had already found its lessons. Taking the tools away on the last step
+ * turns that into an answer built from whatever it has.
+ */
+function reserveLastStepForOutput({ stepNumber }: { stepNumber: number }) {
+  return stepNumber >= MAX_STEPS - 1 ? { toolChoice: "none" as const } : {};
+}
+
 /** A search that has not landed by now is not worth making the learner wait for. */
 const REQUEST_TIMEOUT_MS = 60_000;
 
@@ -146,6 +159,7 @@ export async function POST(request: Request) {
       prompt: query,
       tools,
       stopWhen: stepCountIs(MAX_STEPS),
+      prepareStep: reserveLastStepForOutput,
       output: Output.object({
         schema: searchOutputSchema,
         name: "search_results",
