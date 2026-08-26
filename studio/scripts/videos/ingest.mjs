@@ -154,11 +154,11 @@ async function assertYtDlp() {
   }
 }
 
-/** Prefers a `yt-dlp` on PATH, falls back to the module. Never a shell string. */
+/** Uses `yt-dlp` executable by default, or YT_DLP_PATH override. Never a shell string. */
 function ytDlpCommand(args) {
   return process.env.YT_DLP_PATH
     ? [process.env.YT_DLP_PATH, args]
-    : ['python3', ['-m', 'yt_dlp', ...args]]
+    : ['yt-dlp', args]
 }
 
 async function fetchLessonVideoUrls() {
@@ -306,6 +306,7 @@ function buildChapters(chapters, duration) {
   return (chapters ?? [])
     .map((chapter, index) => ({
       _key: `chapter-${index}`,
+      _type: 'videoChapter',
       startSeconds: clamp(Math.floor(chapter.start ?? 0), duration),
       label: normalise(String(chapter.title ?? '')),
     }))
@@ -338,7 +339,7 @@ function buildChunks(cues, duration) {
 
   if (current) chunks.push(current)
 
-  return chunks.map((chunk, index) => ({_key: `chunk-${index}`, ...chunk}))
+  return chunks.map((chunk, index) => ({_key: `chunk-${index}`, _type: 'videoChunk', ...chunk}))
 }
 
 function clamp(seconds, duration) {

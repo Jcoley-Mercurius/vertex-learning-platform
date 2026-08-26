@@ -98,7 +98,7 @@ export default async function CoursePage({ params }: PageProps<"/courses/[slug]"
           course_title: title,
           course_slug: slug,
           level: course.level ?? null,
-          popular: course.popular ?? false,
+          is_popular: course.popular ?? false,
           module_count: modules.length,
           lesson_count: modules.reduce((total, module) => total + module.lessons.length, 0),
           duration_seconds: course.durationSeconds ?? 0,

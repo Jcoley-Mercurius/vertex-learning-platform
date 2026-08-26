@@ -102,10 +102,11 @@ clean. Only if no chapter matches do you fall back to matching the transcript ch
 
 **Never fetch \`chunks\` or \`chapters\` whole.** They are long enough to overflow your
 context and end the search. Always filter *inside* the array and slice it, taking at most
-three per video:
+three per video. For example, to check lessons with IDs "abc" and "def" for content about
+caching, inline the IDs directly:
 
 \`\`\`
-*[_type == "lesson" && _id in $ids] {
+*[_type == "lesson" && _id in ["abc", "def"]] {
   _id,
   "video": *[_type == "video" && url == ^.videoUrl][0] {
     "chapters": chapters[label match "cach*" || label match "revalidat*"][0...3],

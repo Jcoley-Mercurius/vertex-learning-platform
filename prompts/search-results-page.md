@@ -110,7 +110,9 @@ tracking, My Learning, and anything on other pages.
 - The query string is rendered as text in the heading (React escapes it) and is length
   capped at `MAX_QUERY_LENGTH` before it reaches the route.
 - Lesson and course slugs are URL-encoded into hrefs; `startSeconds` stays a clamped number.
-- PostHog keeps capturing counts only — the query text is never sent.
+- PostHog captures the raw query text in `search_submitted`, `search_sorted`,
+  `catalog_opened_from_search`, and `search_result_opened` events to understand learner
+  needs and identify catalog gaps.
 
 ## Acceptance criteria
 

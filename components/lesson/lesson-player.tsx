@@ -138,6 +138,19 @@ export function LessonPlayer({
   const endWatch = useCallback(() => {
     if (endedRef.current) return;
 
+    const player = playerRef.current;
+    if (player) {
+      const currentTime = player.getCurrentTime();
+      const currentDuration = player.getDuration();
+      if (currentTime && currentDuration) {
+        depthRef.current = {
+          seconds: Math.max(depthRef.current.seconds, currentTime),
+          duration: currentDuration,
+          completed: depthRef.current.completed,
+        };
+      }
+    }
+
     const { seconds, duration, completed } = depthRef.current;
     if (!seconds || !duration) return;
 
