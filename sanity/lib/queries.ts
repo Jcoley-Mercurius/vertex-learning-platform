@@ -169,6 +169,71 @@ export const CATEGORY_SLUGS_QUERY = defineQuery(/* groq */ `
   *[_type == "category" && defined(slug.current)].slug.current
 `)
 
+/* ---------------------------------------------------------------- progress */
+
+/**
+ * A learner's own progress record, by Clerk user id (AGENTS.md section 8).
+ *
+ * This is app state, not content: it is fetched with the write client
+ * (`useCdn: false`) from the progress route only, because a learner who just
+ * finished a lesson must not be handed the CDN's copy from before that write.
+ *
+ * The lesson reference is projected down to its id and slug. Nothing here
+ * dereferences notes or video, so the payload stays a few hundred bytes even
+ * for a learner who has started every lesson in the catalog.
+ */
+export const PROGRESS_BY_USER_QUERY = defineQuery(/* groq */ `
+  *[_type == "progress" && userId == $userId][0] {
+    lastActiveAt,
+    "lastLessonSlug": lastLesson->slug.current,
+    "lessons": lessons[defined(lesson->_id)] {
+      "lessonId": lesson->_id,
+      "lessonSlug": lesson->slug.current,
+      "completed": coalesce(completed, false),
+      "positionSeconds": coalesce(positionSeconds, 0),
+      updatedAt
+    }
+  }
+`)
+
+/**
+ * The My Learning catalog: every course, plus its curriculum flattened to the
+ * lesson ids and slugs in order.
+ *
+ * The page derives everything else — the percentage, which lesson to resume,
+ * whether a course is in progress, completed or untouched — by intersecting
+ * these ids with the learner's progress. Nothing about a learner is stored on a
+ * course, and no percentage is stored anywhere (AGENTS.md section 7).
+ */
+export const MY_LEARNING_QUERY = defineQuery(/* groq */ `
+  *[_type == "course" && defined(slug.current)]
+  | order(popular desc, title asc) {
+    _id,
+    title,
+    "slug": slug.current,
+    summary,
+    glyph,
+    level,
+    "lessons": modules[].lessons[]-> {
+      _id,
+      title,
+      "slug": slug.current,
+      durationSeconds
+    },
+    ${courseTotalsFragment}
+  }
+`)
+
+/** Guards a progress write: the lesson has to exist, and bounds the position. */
+export const LESSON_FOR_PROGRESS_QUERY = defineQuery(/* groq */ `
+  *[_type == "lesson" && _id == $id][0] {
+    _id,
+    title,
+    durationSeconds,
+    "courseTitle": *[_type == "course" && references(^._id)] | order(_id asc) [0].title
+  }
+`)
+
 /* ------------------------------------------------------------------ search */
 
 /**

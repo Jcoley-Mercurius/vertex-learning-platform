@@ -4,6 +4,7 @@ import { Inter, Playfair_Display } from "next/font/google";
 
 import { SanityLive } from "@/sanity/lib/live";
 import { PostHogIdentify } from "@/components/site";
+import { ProgressProvider } from "@/components/progress";
 import "./globals.css";
 
 const inter = Inter({
@@ -31,7 +32,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col">
         <ClerkProvider>
           <PostHogIdentify />
-          {children}
+          {/* Fetches the signed-in learner's progress once and shares it, so the
+              prerendered pages below can overlay completion marks without any of
+              them reading the session on the server. */}
+          <ProgressProvider>{children}</ProgressProvider>
         </ClerkProvider>
         {/* Keeps content rendered from Sanity up to date without a refresh. */}
         <SanityLive />

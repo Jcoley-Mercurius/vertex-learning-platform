@@ -2,10 +2,10 @@ import Link from "next/link";
 import { Icon, ProgressBar, buttonClassName } from "@/components/ui";
 
 /**
- * The progress band that closes the course page. Progress tracking has no
- * backend yet (no progress document, no write route), so the page passes `null`
- * and this renders the zero state: 0% complete, and the action reads
- * "Start Learning". When progress lands, it is the same shape with real values.
+ * The progress band that closes the course page. Presentational: it is handed a
+ * percentage and a label, and `CourseProgressBand` is what derives them from the
+ * learner's progress. `null` is still the zero state — 0% complete — which is
+ * what a signed-out visitor and the first paint both get.
  */
 export function CourseProgress({
   progress,

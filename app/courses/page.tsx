@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { CourseCardProgress } from "@/components/course";
 import { CourseGlyph, SiteHeader, ViewTracker } from "@/components/site";
 import { CourseCard } from "@/components/ui";
 import { formatDuration, formatLevel, pluralize } from "@/lib/format";
@@ -54,6 +55,8 @@ export default async function CoursesPage() {
                     duration={formatDuration(course.durationSeconds)}
                     modules={pluralize(course.moduleCount, "module")}
                     icon={<CourseGlyph name={course.glyph ?? "nextjs"} />}
+                    /* Renders nothing unless this learner has started the course. */
+                    footer={<CourseCardProgress lessonIds={course.lessonIds ?? []} />}
                     className="w-full"
                   />
                 </li>

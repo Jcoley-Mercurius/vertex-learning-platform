@@ -14,4 +14,6 @@ export const structure: StructureResolver = (S) =>
       // Built by the ingestion pipeline and read only. Listed last because it is
       // an internal lookup for search, not something an author edits.
       S.documentTypeListItem('video').title('Videos').icon(DocumentVideoIcon),
+      // `progress` is deliberately not listed. It is app state written by
+      // /api/progress, not content an author edits.
     ])

@@ -70,9 +70,16 @@ export const courseTotalsFragment = /* groq */ `
   "durationSeconds": coalesce(math::sum(modules[].lessons[]->durationSeconds), 0)
 `
 
-/** Everything a course card needs on the catalog and on listing pages. */
+/**
+ * Everything a course card needs on the catalog and on listing pages.
+ *
+ * `lessonIds` is the curriculum flattened to ids and nothing else. It is what
+ * lets a card show the signed-in learner's progress without the page reading
+ * the session: the ids are public, the completions are overlaid in the browser.
+ */
 export const courseCardFragment = /* groq */ `
   _id,
+  "lessonIds": modules[].lessons[]._ref,
   title,
   "slug": slug.current,
   summary,

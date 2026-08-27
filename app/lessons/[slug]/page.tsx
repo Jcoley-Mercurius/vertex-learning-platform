@@ -29,8 +29,10 @@ import { sanityFetch } from "@/sanity/lib/live";
  * `Lesson 5.1` label, and the previous/next links are all derived from the
  * course's curriculum order — none of them is stored.
  *
- * Progress has no backend yet, so completion marks and the percentage render
- * their zero state, exactly as the course page does.
+ * The page itself never reads the session, so it stays prerendered and renders
+ * the progress zero state; the sidebar overlays the signed-in learner's
+ * completion marks after hydration, and the player writes new progress through
+ * `/api/progress`.
  */
 
 export async function generateStaticParams() {
@@ -122,7 +124,8 @@ export default async function LessonPage({
   const previous = position > 0 ? adjacent(position - 1) : null;
   const next = position >= 0 && position < flat.length - 1 ? adjacent(position + 1) : null;
 
-  /* Progress zero state: no completed lessons, 0% of the course. */
+  /* The server-rendered zero state. `LessonSidebar` overlays the learner's own
+     completions on top of this once `useProgress()` has loaded. */
   const sidebarModules: SidebarModule[] = modules.map((module) => ({
     _key: module._key,
     title: module.title,
