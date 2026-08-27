@@ -54,6 +54,8 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
   const [fetched, setFetched] = useState<ProgressState | null>(null);
   /* Guards React's development double mount and any re-render of the provider. */
   const requested = useRef(false);
+  /* Monotonically increasing revision for ordering concurrent progress writes. */
+  const clientRevision = useRef(0);
 
   /* Signing out is handled here rather than by resetting state in an effect: the
      marks belong to the session, so a provider with no session simply has none. */
@@ -99,6 +101,10 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
     async ({ lessonId, positionSeconds = 0, completed = false }) => {
       if (!isSignedIn) return;
 
+      // Increment client revision for ordering
+      clientRevision.current += 1;
+      const revision = clientRevision.current;
+
       setFetched((current) => {
         const state = current ?? EMPTY_PROGRESS;
         const rest = state.lessons.filter((lesson) => lesson.lessonId !== lessonId);
@@ -120,17 +126,26 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
       });
 
       try {
-        await fetch("/api/progress", {
+        const response = await fetch("/api/progress", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ lessonId, positionSeconds, completed }),
+          body: JSON.stringify({ lessonId, positionSeconds, completed, clientRevision: revision }),
           /* The last write of a visit goes out during `pagehide`, when a normal
              fetch would be cancelled with the document. */
           keepalive: true,
         });
+
+        if (!response.ok) {
+          // On error, reconcile with server state
+          const freshProgress = await fetch("/api/progress").then((r) =>
+            r.ok ? r.json() : EMPTY_PROGRESS,
+          );
+          setFetched(freshProgress);
+        }
       } catch {
         /* A dropped progress write is not worth interrupting the learner for;
-           the next tick writes the same position again. */
+           the next tick writes the same position again. On actual network errors,
+           we don't reconcile since we can't reach the server anyway. */
       }
     },
     [isSignedIn],

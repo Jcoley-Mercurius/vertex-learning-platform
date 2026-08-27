@@ -104,13 +104,30 @@ export function resumeLessonIndex(lessonIds: string[], completed: Set<string>): 
   return next === -1 ? 0 : next;
 }
 
-/** Seconds of lesson runtime a learner has finished, for the My Learning summary. */
+/**
+ * Seconds of lesson runtime a learner has watched, for the My Learning summary.
+ *
+ * For completed lessons, counts the full duration. For incomplete lessons,
+ * counts the saved position (bounded by duration).
+ */
 export function watchedSeconds(
   lessons: { _id: string; durationSeconds: number }[],
   completed: Set<string>,
+  byLesson: Map<string, LessonProgress> = new Map(),
 ) {
-  return lessons.reduce(
-    (total, lesson) => (completed.has(lesson._id) ? total + lesson.durationSeconds : total),
-    0,
-  );
+  return lessons.reduce((total, lesson) => {
+    if (completed.has(lesson._id)) {
+      // Full duration for completed lessons
+      return total + lesson.durationSeconds;
+    }
+
+    const progress = byLesson.get(lesson._id);
+    if (progress && progress.positionSeconds > 0) {
+      // Saved position for incomplete lessons, capped at duration
+      const position = Math.min(progress.positionSeconds, lesson.durationSeconds);
+      return total + position;
+    }
+
+    return total;
+  }, 0);
 }
