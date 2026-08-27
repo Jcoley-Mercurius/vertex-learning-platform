@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useId, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import posthog from "posthog-js";
 
+import { useProgress } from "@/components/progress";
 import { CourseGlyph, type CourseGlyphName } from "@/components/site";
 import { Icon, ProgressBar, cn } from "@/components/ui";
 import { formatDuration } from "@/lib/format";
@@ -32,9 +33,11 @@ export type SidebarModule = {
  * with progress, and the module accordion with the current module expanded and
  * the current lesson marked "Now playing".
  *
- * Completion marks and the percentage are driven by props. Progress has no
- * backend yet (no progress document, no write route), so the page passes the
- * zero state today — the same precedent `CourseProgress` set.
+ * Completion marks and the percentage come from the learner's progress, read
+ * through `useProgress()` rather than from the server. The page itself is
+ * statically prerendered and never touches the session, so it hands this the
+ * zero state and the marks are overlaid here once progress has loaded
+ * (AGENTS.md section 7).
  */
 export function LessonSidebar({
   courseTitle,
@@ -49,13 +52,44 @@ export function LessonSidebar({
   percentComplete: number;
   modules: SidebarModule[];
 }) {
+  const { completed: completedIds, loaded } = useProgress();
+
+  /* The learner's marks over the server-rendered zero state. Until progress has
+     loaded — and for a signed-out visitor, permanently — the props stand, so
+     nothing flashes from complete to incomplete. */
+  const { modules: marked, percent } = useMemo(() => {
+    if (!loaded) return { modules, percent: percentComplete };
+
+    const withMarks = modules.map((module) => {
+      const lessons = module.lessons.map((lesson) => ({
+        ...lesson,
+        completed: lesson.completed || completedIds.has(lesson._id),
+      }));
+
+      return {
+        ...module,
+        lessons,
+        /* A module is complete when every lesson in it is. */
+        completed: lessons.length > 0 && lessons.every((lesson) => lesson.completed),
+      };
+    });
+
+    const all = withMarks.flatMap((module) => module.lessons);
+    const done = all.filter((lesson) => lesson.completed).length;
+
+    return {
+      modules: withMarks,
+      percent: all.length === 0 ? 0 : Math.round((done / all.length) * 100),
+    };
+  }, [completedIds, loaded, modules, percentComplete]);
+
   const panelId = useId();
   const currentIndex = Math.max(
     0,
-    modules.findIndex((module) => module.current),
+    marked.findIndex((module) => module.current),
   );
   const [openKeys, setOpenKeys] = useState<string[]>(
-    modules[currentIndex] ? [modules[currentIndex]._key] : [],
+    marked[currentIndex] ? [marked[currentIndex]._key] : [],
   );
   /* There is no room for the rail below `lg`, so it collapses behind a
      disclosure above the lesson (AGENTS.md section 3). */
@@ -108,19 +142,19 @@ export function LessonSidebar({
           </span>
           <div className="min-w-0 flex-1">
             <p className="text-body-lg font-medium text-neutral-900">{courseTitle}</p>
-            <p className="mt-1 text-body text-neutral-500">{percentComplete}% complete</p>
-            <ProgressBar value={percentComplete} showLabel={false} className="mt-2" />
+            <p className="mt-1 text-body text-neutral-500">{percent}% complete</p>
+            <ProgressBar value={percent} showLabel={false} className="mt-2" />
           </div>
         </div>
 
         <div className="border-t border-neutral-200">
           <p className="py-4 text-body-lg text-neutral-900">
-            Module {currentIndex + 1} of {modules.length}
+            Module {currentIndex + 1} of {marked.length}
           </p>
         </div>
 
         <ol className="border-t border-neutral-200">
-          {modules.map((module, moduleIndex) => {
+          {marked.map((module, moduleIndex) => {
             const open = openKeys.includes(module._key);
             const id = `${panelId}-${module._key}`;
 
@@ -138,7 +172,7 @@ export function LessonSidebar({
                   className={cn(
                     "absolute left-[2.125rem] w-px bg-neutral-200",
                     moduleIndex === 0 ? "top-8" : "top-0",
-                    moduleIndex === modules.length - 1 && !open ? "h-0" : "bottom-0",
+                    moduleIndex === marked.length - 1 && !open ? "h-0" : "bottom-0",
                   )}
                 />
 

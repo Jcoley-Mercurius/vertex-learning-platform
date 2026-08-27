@@ -6,3 +6,5 @@ export {
   type CurriculumModule,
 } from "./course-curriculum";
 export { CourseProgress } from "./course-progress";
+export { CourseProgressBand } from "./course-progress-band";
+export { CourseCardProgress } from "./course-card-progress";

@@ -38,6 +38,7 @@ export function CourseCard({
   icon,
   orientation = "inline",
   href,
+  footer,
   className,
 }: {
   title: string;
@@ -51,6 +52,12 @@ export function CourseCard({
   orientation?: "inline" | "stacked";
   /** When set, the whole card becomes a link to the course. */
   href?: string;
+  /**
+   * Rendered under the meta row. The catalog puts the signed-in learner's
+   * progress bar here; it is a slot rather than a value because the card itself
+   * is server-rendered and knows nothing about the session.
+   */
+  footer?: ReactNode;
   className?: string;
 }) {
   const stacked = orientation === "stacked";
@@ -108,6 +115,7 @@ export function CourseCard({
           {modules}
         </span>
       </div>
+      {footer}
     </>
   );
 

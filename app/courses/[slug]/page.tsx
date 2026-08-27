@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import {
   CourseCurriculum,
   CourseHero,
-  CourseProgress,
+  CourseProgressBand,
   LearningOutcomes,
   type CurriculumModule,
 } from "@/components/course";
@@ -83,9 +83,17 @@ export default async function CoursePage({ params }: PageProps<"/courses/[slug]"
     };
   });
 
-  /* Where "Continue Learning" goes. With no progress recorded yet, that is the
-     first lesson of the first module. */
-  const firstLesson = modules.flatMap((module) => module.lessons).find((lesson) => lesson.href);
+  /* The curriculum flattened for the progress band: it derives the percentage
+     and where "Continue Learning" goes from this order and the learner's own
+     completions. */
+  const flatLessons = modules
+    .flatMap((module) => module.lessons)
+    .map((lesson) => ({ _id: lesson._id, href: lesson.href }));
+
+  /* The hero's CTA stays the same for everyone: it is above the fold on a
+     prerendered page, so it opens the course at its first lesson rather than
+     waiting on the session. The resume affordance is the progress band below. */
+  const firstLesson = flatLessons.find((lesson) => lesson.href);
 
   return (
     <>
@@ -136,11 +144,7 @@ export default async function CoursePage({ params }: PageProps<"/courses/[slug]"
           </div>
 
           <div className="relative mx-auto w-full max-w-[936px] px-6 pb-24">
-            <CourseProgress
-              progress={null}
-              href={firstLesson?.href ?? undefined}
-              label="Start Learning"
-            />
+            <CourseProgressBand lessons={flatLessons} />
           </div>
         </section>
       </main>

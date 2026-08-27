@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useId, useState } from "react";
 import posthog from "posthog-js";
+import { useProgress } from "@/components/progress";
 import { Badge, Icon, cn } from "@/components/ui";
 import { formatDuration, lessonLabel, pluralize } from "@/lib/format";
 
@@ -32,6 +33,10 @@ const COLLAPSED_MODULES = 6;
  *
  * Module numbers and lesson labels are positional (AGENTS.md section 7), so they
  * are derived here from array order rather than read from a field.
+ *
+ * Completion marks come from `useProgress()`, not from props: the course page is
+ * statically prerendered and never reads the session, so the learner's marks are
+ * overlaid here after hydration.
  */
 export function CourseCurriculum({
   modules,
@@ -40,6 +45,7 @@ export function CourseCurriculum({
   modules: CurriculumModule[];
   durationSeconds: number;
 }) {
+  const { completed } = useProgress();
   const panelId = useId();
   const [openKeys, setOpenKeys] = useState<string[]>([]);
   const [showAll, setShowAll] = useState(false);
@@ -82,6 +88,9 @@ export function CourseCurriculum({
         {visible.map((module, moduleIndex) => {
           const open = openKeys.includes(module._key);
           const id = `${panelId}-${module._key}`;
+          const moduleCompleted =
+            module.lessons.length > 0 &&
+            module.lessons.every((lesson) => completed.has(lesson._id));
 
           return (
             <li
@@ -112,8 +121,19 @@ export function CourseCurriculum({
                   "rounded-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-400",
                 )}
               >
-                <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-white text-body-lg text-neutral-900">
-                  {moduleIndex + 1}
+                <span
+                  className={cn(
+                    "relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-body-lg",
+                    moduleCompleted
+                      ? "border-primary-500 bg-primary-500 text-white"
+                      : "border-neutral-200 bg-white text-neutral-900",
+                  )}
+                >
+                  {moduleCompleted ? (
+                    <Icon name="check-circle" size={20} aria-label="Module complete" />
+                  ) : (
+                    moduleIndex + 1
+                  )}
                 </span>
 
                 <span className="min-w-0 flex-1">
@@ -144,12 +164,16 @@ export function CourseCurriculum({
                 <ul className="border-t border-neutral-100 pt-2">
                   {module.lessons.map((lesson, lessonIndex) => {
                     const label = lessonLabel(moduleIndex, lessonIndex);
+                    const lessonCompleted = completed.has(lesson._id);
                     const row = (
                       <>
+                        {/* The completion mark replaces the play affordance, as
+                            it does in the lesson sidebar. */}
                         <Icon
-                          name="play-circle"
+                          name={lessonCompleted ? "check-circle" : "play-circle"}
                           size={18}
                           className="shrink-0 text-primary-500"
+                          aria-label={lessonCompleted ? "Completed" : undefined}
                         />
                         <span className="w-[4.75rem] shrink-0 text-body text-neutral-500">
                           {label}

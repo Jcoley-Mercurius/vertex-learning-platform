@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import posthog from "posthog-js";
 
+import { useProgress } from "@/components/progress";
 import { Icon } from "@/components/ui";
 import { formatTimestamp, type ParsedVideo } from "@/lib/video";
 
@@ -16,6 +17,11 @@ import { formatTimestamp, type ParsedVideo } from "@/lib/video";
  * The poster is a click-to-play facade, so nothing is requested from YouTube
  * until the learner plays. The click then mounts the IFrame API player, which
  * is also what reports watch depth to PostHog.
+ *
+ * It is also where progress is written. Position goes to `/api/progress` at
+ * most every 15 seconds and once more on the way out, and reaching the end of
+ * the video is what marks the lesson complete (AGENTS.md section 7). The
+ * browser holds no token — the route does the write.
  *
  * Watch depth is reported twice over: `video_milestone_reached` as the learner
  * passes 25/50/75%, and one `video_watch_ended` when they leave. The milestones
@@ -82,6 +88,19 @@ function loadYouTubeApi() {
 /** Watch-depth milestones, in percent. */
 const MILESTONES = [25, 50, 75];
 
+/**
+ * How often a resume position is written. The player already ticks every 5s for
+ * milestones; writing on every tick would be three Sanity writes a minute per
+ * learner to move a number by five seconds.
+ */
+const PROGRESS_WRITE_INTERVAL_MS = 15_000;
+
+/**
+ * A stored position below this is not worth resuming from — it is the first few
+ * seconds of a video the learner has effectively not started.
+ */
+const MIN_RESUME_SECONDS = 15;
+
 export function LessonPlayer({
   video,
   posterUrl,
@@ -108,6 +127,7 @@ export function LessonPlayer({
     courseTitle: string;
   };
 }) {
+  const { save, byLesson } = useProgress();
   const [playing, setPlaying] = useState(false);
   const mountRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<YouTubePlayer | null>(null);
@@ -120,10 +140,36 @@ export function LessonPlayer({
   /* The second the mounted player was last sent to, so a new deep link into a
      lesson that is already playing can be told apart from a re-render. */
   const seekedToRef = useRef(startSeconds);
+  /* When a resume position was last written, and whether completion already
+     went out for this visit, so the ENDED handler cannot write twice. */
+  const savedAtRef = useRef(0);
+  const savedCompleteRef = useRef(false);
+  /* The second playback actually began, frozen when the learner pressed play. */
+  const beginRef = useRef(0);
+
+  /* Where playback would begin if the learner pressed play now. A search
+     result's `?t=` always wins — they asked for that exact moment — and
+     otherwise the lesson picks up from where they stopped (AGENTS.md section 7).
+     A finished lesson starts over rather than resuming at its own last second.
+
+     This tracks the learner's progress, so it changes *while the video plays*:
+     the position written at 0:20 is itself past the resume threshold. Nothing
+     downstream of playback may depend on it — see `beginRef`. */
+  const stored = byLesson.get(analytics.lessonId);
+  const resumeSeconds =
+    stored && !stored.completed && stored.positionSeconds >= MIN_RESUME_SECONDS
+      ? Math.min(stored.positionSeconds, durationSeconds || stored.positionSeconds)
+      : 0;
+  const nextStartSeconds = startSeconds > 0 ? startSeconds : resumeSeconds;
 
   /* Every video event carries the same lesson identity plus how it was entered:
-     `deep_linked` is a search result's "watch from 4:20", the one resume-shaped
-     behaviour the app has today. */
+     `deep_linked` is a search result's "watch from 4:20", `resumed` is the
+     learner returning to where they stopped.
+
+     Deliberately independent of the learner's live progress. This memo feeds
+     `endWatch`, which the teardown effect depends on, so a value that changed
+     mid-playback would re-run that effect — and its cleanup destroys the
+     player. That is exactly what used to end a video around twenty seconds in. */
   const context = useMemo(
     () => ({
       ...analytics,
@@ -133,6 +179,22 @@ export function LessonPlayer({
       deep_linked: startSeconds > 0,
     }),
     [analytics, durationSeconds, startSeconds, video?.provider],
+  );
+
+  /**
+   * Writes the resume position, throttled. `force` is the way out of the page:
+   * the last position of a visit has to go out even if the interval has not
+   * elapsed, or a learner who watches for ten seconds and leaves resumes at zero.
+   */
+  const savePosition = useCallback(
+    (seconds: number, { force = false } = {}) => {
+      const now = Date.now();
+      if (!force && now - savedAtRef.current < PROGRESS_WRITE_INTERVAL_MS) return;
+
+      savedAtRef.current = now;
+      void save({ lessonId: analytics.lessonId, positionSeconds: Math.round(seconds) });
+    },
+    [analytics.lessonId, save],
   );
 
   /**
@@ -160,13 +222,22 @@ export function LessonPlayer({
 
     endedRef.current = true;
 
+    /* The last position of the visit. `save` sends it with `keepalive`, so it
+       survives the document going away underneath it. */
+    savePosition(seconds, { force: true });
+
     posthog.capture("video_watch_ended", {
       ...context,
+      /* Where this playback actually began, which is not the URL's `?t=` when
+         the learner resumed. Read from the ref so the capture stays independent
+         of the live progress state. */
+      start_seconds: beginRef.current,
+      resumed: startSeconds === 0 && beginRef.current > 0,
       seconds_watched: Math.round(seconds),
       percent_watched: Math.min(100, Math.round((seconds / duration) * 100)),
       completed,
     });
-  }, [context]);
+  }, [context, savePosition, startSeconds]);
 
   /* Milestones are checked on a timer: the IFrame API reports state changes,
      not position, so there is nothing else to hang watch depth off. */
@@ -187,6 +258,8 @@ export function LessonPlayer({
       completed: depthRef.current.completed,
     };
 
+    savePosition(seconds);
+
     for (const milestone of MILESTONES) {
       if (percent >= milestone && !reachedRef.current.includes(milestone)) {
         reachedRef.current.push(milestone);
@@ -197,7 +270,7 @@ export function LessonPlayer({
         });
       }
     }
-  }, [context]);
+  }, [context, savePosition]);
 
   useEffect(() => {
     if (!playing) return;
@@ -218,27 +291,51 @@ export function LessonPlayer({
     player.seekTo(startSeconds, true);
   }, [startSeconds]);
 
+  /* The latest `endWatch`, reachable from effects that must not re-run when it
+     changes. Its identity moves with the analytics context, and the teardown
+     below destroys the player — so depending on it directly would end playback
+     the moment anything in that context changed. */
+  const endWatchRef = useRef(endWatch);
+
+  useEffect(() => {
+    endWatchRef.current = endWatch;
+  });
+
   /* pagehide covers closing the tab or a hard navigation, where unmount cleanup
      is not guaranteed to run. */
   useEffect(() => {
-    window.addEventListener("pagehide", endWatch);
-    return () => window.removeEventListener("pagehide", endWatch);
-  }, [endWatch]);
+    const onPageHide = () => endWatchRef.current();
 
+    window.addEventListener("pagehide", onPageHide);
+    return () => window.removeEventListener("pagehide", onPageHide);
+  }, []);
+
+  /* Unmount only. Empty deps are load-bearing: this cleanup tears the player
+     down, so it must run when the learner leaves the lesson and at no other
+     time. */
   useEffect(() => {
     return () => {
-      endWatch();
+      endWatchRef.current();
       playerRef.current?.destroy();
       playerRef.current = null;
     };
-  }, [endWatch]);
+  }, []);
 
   const play = useCallback(async () => {
     if (!video) return;
 
+    /* Frozen for this playback: from here on the resume position is history, and
+       the learner's own progress writes must not move it. */
+    const begin = nextStartSeconds;
+    beginRef.current = begin;
+
     setPlaying(true);
-    seekedToRef.current = startSeconds;
-    posthog.capture("video_played", context);
+    seekedToRef.current = begin;
+    posthog.capture("video_played", {
+      ...context,
+      start_seconds: begin,
+      resumed: startSeconds === 0 && begin > 0,
+    });
 
     const api = await loadYouTubeApi();
     const mount = mountRef.current;
@@ -252,7 +349,7 @@ export function LessonPlayer({
         rel: 0,
         modestbranding: 1,
         playsinline: 1,
-        start: startSeconds,
+        start: begin,
         origin: window.location.origin,
       },
       events: {
@@ -264,14 +361,25 @@ export function LessonPlayer({
               duration: runtime || depthRef.current.duration,
               completed: true,
             };
-            /* Until progress has a backend, finishing the video is the closest
-               thing the app has to a completed lesson. */
             posthog.capture("video_completed", context);
+
+            /* Reaching the end is what completes a lesson (AGENTS.md section 7).
+               `lesson_completed` is captured by the route, not here, so it fires
+               on the transition rather than on every replay. */
+            if (!savedCompleteRef.current) {
+              savedCompleteRef.current = true;
+              savedAtRef.current = Date.now();
+              void save({
+                lessonId: analytics.lessonId,
+                positionSeconds: Math.round(runtime || durationSeconds),
+                completed: true,
+              });
+            }
           }
         },
       },
     });
-  }, [context, startSeconds, video]);
+  }, [analytics.lessonId, context, durationSeconds, nextStartSeconds, save, startSeconds, video]);
 
   return (
     <div className="mt-8 overflow-hidden rounded-lg bg-neutral-900 shadow-md">
@@ -301,8 +409,8 @@ export function LessonPlayer({
                 type="button"
                 onClick={play}
                 aria-label={
-                  startSeconds > 0
-                    ? `Play ${title} from ${formatTimestamp(startSeconds)}`
+                  nextStartSeconds > 0
+                    ? `Play ${title} from ${formatTimestamp(nextStartSeconds)}`
                     : `Play ${title}`
                 }
                 className="absolute inset-0 flex items-center justify-center bg-neutral-900/30 transition-colors hover:bg-neutral-900/45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-400"
@@ -310,9 +418,10 @@ export function LessonPlayer({
                 <span className="flex h-16 w-16 items-center justify-center rounded-full bg-primary-500 text-white shadow-lg">
                   <Icon name="play" variant="filled" size={28} className="ml-1" />
                 </span>
-                {startSeconds > 0 ? (
+                {nextStartSeconds > 0 ? (
                   <span className="absolute bottom-5 left-5 rounded-xs bg-neutral-900/80 px-2 py-1 text-body text-white">
-                    Starts at {formatTimestamp(startSeconds)}
+                    {startSeconds > 0 ? "Starts at" : "Resumes at"}{" "}
+                    {formatTimestamp(nextStartSeconds)}
                   </span>
                 ) : null}
               </button>
