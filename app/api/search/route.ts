@@ -335,24 +335,31 @@ async function buildResponse(
     const moment = moments.get(lesson._id);
 
     if (moment) {
-      // Clamped: a timestamp past the runtime would seek nowhere.
-      const startSeconds = durationSeconds
-        ? Math.min(moment.startSeconds, durationSeconds)
-        : moment.startSeconds;
-      const remaining = durationSeconds ? durationSeconds - startSeconds : 0;
+      // Reject moments whose stored startSeconds is outside the lesson runtime.
+      if (durationSeconds && moment.startSeconds >= durationSeconds) {
+        results.push({
+          ...base,
+          kind: "lesson",
+          keyPoints: (lesson.keyPoints ?? []).filter((point): point is string => !!point),
+        });
+      } else {
+        // Preserve the original moment.startSeconds and cap the clip end at runtime.
+        const clipEnd = durationSeconds
+          ? Math.min(moment.startSeconds + (moment.clipSeconds || 0), durationSeconds)
+          : moment.startSeconds + (moment.clipSeconds || 0);
+        const clipSeconds = clipEnd > moment.startSeconds ? clipEnd - moment.startSeconds : 0;
 
-      results.push({
-        ...base,
-        kind: "video",
-        startSeconds,
-        clipSeconds: remaining
-          ? Math.min(moment.clipSeconds || remaining, remaining)
-          : moment.clipSeconds,
-        chapterLabel: moment.chapterLabel,
-        matchSource: moment.source,
-        posterUrl: lesson.poster?.asset?.url ?? null,
-        posterAlt: lesson.poster?.alt ?? lesson.title ?? "",
-      });
+        results.push({
+          ...base,
+          kind: "video",
+          startSeconds: moment.startSeconds,
+          clipSeconds,
+          chapterLabel: moment.chapterLabel,
+          matchSource: moment.source,
+          posterUrl: lesson.poster?.asset?.url ?? null,
+          posterAlt: lesson.poster?.alt ?? lesson.title ?? "",
+        });
+      }
     } else {
       results.push({
         ...base,

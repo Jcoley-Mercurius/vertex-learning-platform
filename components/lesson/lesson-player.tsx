@@ -285,11 +285,11 @@ export function LessonPlayer({
   useEffect(() => {
     const player = playerRef.current;
 
-    if (!player || startSeconds === seekedToRef.current) return;
+    if (!player || !playing || startSeconds === seekedToRef.current) return;
 
     seekedToRef.current = startSeconds;
     player.seekTo(startSeconds, true);
-  }, [startSeconds]);
+  }, [playing, startSeconds]);
 
   /* The latest `endWatch`, reachable from effects that must not re-run when it
      changes. Its identity moves with the analytics context, and the teardown
@@ -353,6 +353,18 @@ export function LessonPlayer({
         origin: window.location.origin,
       },
       events: {
+        onReady: () => {
+          /* A deep link that arrived while the API was loading: `begin` was
+             frozen before the await, so a newer `?t=` has to be applied here.
+             Guarded on `startSeconds > 0` — a resume has no `?t=` at all, and
+             comparing against it would seek a resumed video back to zero. */
+          if (playerRef.current && startSeconds > 0 && startSeconds !== begin) {
+            playerRef.current.seekTo(startSeconds, true);
+            seekedToRef.current = startSeconds;
+          } else {
+            seekedToRef.current = begin;
+          }
+        },
         onStateChange: (event) => {
           if (event.data === api.PlayerState.ENDED) {
             const runtime = playerRef.current?.getDuration() ?? 0;
