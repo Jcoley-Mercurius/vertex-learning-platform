@@ -185,12 +185,26 @@ export const CATEGORY_SLUGS_QUERY = defineQuery(/* groq */ `
 export const PROGRESS_BY_USER_QUERY = defineQuery(/* groq */ `
   *[_type == "progress" && userId == $userId][0] {
     lastActiveAt,
+    notificationsReadAt,
     "lastLessonSlug": lastLesson->slug.current,
+    "bookmarkedCourses": bookmarkedCourses[defined(course->_id)] {
+      "courseId": course->_id,
+      "courseTitle": course->title,
+      "courseSlug": course->slug.current,
+      bookmarkedAt
+    },
     "lessons": lessons[defined(lesson->_id)] {
       "lessonId": lesson->_id,
       "lessonSlug": lesson->slug.current,
+      "lessonTitle": lesson->title,
+      "lessonDurationSeconds": coalesce(lesson->durationSeconds, 0),
       "completed": coalesce(completed, false),
       "positionSeconds": coalesce(positionSeconds, 0),
+      "bookmarked": coalesce(bookmarked, false),
+      bookmarkedAt,
+      note,
+      noteUpdatedAt,
+      completedAt,
       updatedAt
     }
   }
@@ -221,6 +235,44 @@ export const MY_LEARNING_QUERY = defineQuery(/* groq */ `
       durationSeconds
     },
     ${courseTotalsFragment}
+  }
+`)
+
+/** Guards a course bookmark write: the course has to exist before it is saved. */
+export const COURSE_FOR_BOOKMARK_QUERY = defineQuery(/* groq */ `
+  *[_type == "course" && _id == $id][0] {
+    _id,
+    title
+  }
+`)
+
+/* ----------------------------------------------------------- notifications */
+
+/**
+ * Everything the notification feed needs to derive itself (AGENTS.md section 7:
+ * nothing about a learner is stored on a course).
+ *
+ * No notification is stored anywhere. `GET /api/notifications` intersects this
+ * catalog skeleton with the learner's own progress per request, so publishing a
+ * course fans out to nobody and there is no feed to keep in sync.
+ *
+ * `_createdAt` is what makes a course or a lesson "new": the content model has
+ * no published-at field, and the seed import is the moment these documents came
+ * into existence for this app.
+ */
+export const NOTIFICATIONS_CATALOG_QUERY = defineQuery(/* groq */ `
+  *[_type == "course" && defined(slug.current)] | order(_createdAt desc) [0...40] {
+    _id,
+    _createdAt,
+    title,
+    "slug": slug.current,
+    glyph,
+    "lessons": modules[].lessons[]-> {
+      _id,
+      _createdAt,
+      title,
+      "slug": slug.current
+    }
   }
 `)
 

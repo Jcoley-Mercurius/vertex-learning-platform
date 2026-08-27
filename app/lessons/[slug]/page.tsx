@@ -212,6 +212,8 @@ export default async function LessonPage({
             />
 
             <LessonHero
+              lessonId={lesson._id}
+              courseTitle={courseTitle}
               label={label}
               title={lessonTitle}
               summary={lesson.summary ?? null}
@@ -233,6 +235,7 @@ export default async function LessonPage({
             />
 
             <LessonTabs
+              lessonId={lesson._id}
               lessonTitle={lessonTitle}
               content={
                 <LessonContent

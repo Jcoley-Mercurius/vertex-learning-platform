@@ -12,28 +12,65 @@
  * React.
  */
 
-/** One lesson's state, as the progress route hands it out. */
+/**
+ * One lesson's state, as the progress route hands it out.
+ *
+ * A bookmark and a personal note live here rather than in a type of their own:
+ * all three are the same thing — one learner's state in one lesson — so they
+ * share the keyed array member, the upsert, and the single fetch the browser
+ * already makes.
+ */
 export type LessonProgress = {
   lessonId: string;
   lessonSlug: string | null;
+  lessonTitle: string | null;
+  lessonDurationSeconds: number;
   completed: boolean;
   positionSeconds: number;
+  bookmarked: boolean;
+  bookmarkedAt: string | null;
+  /** Plain text. Written as text and rendered as text, never as markup. */
+  note: string | null;
+  noteUpdatedAt: string | null;
+  completedAt: string | null;
   updatedAt: string | null;
+};
+
+/**
+ * One course a learner saved for later.
+ *
+ * Separate from `LessonProgress` because a course bookmark is not a lesson
+ * bookmark: the course hero saves the whole course, and the course is not any
+ * one of its lessons.
+ */
+export type CourseBookmark = {
+  courseId: string;
+  courseTitle: string | null;
+  courseSlug: string | null;
+  bookmarkedAt: string | null;
 };
 
 /** Everything the browser and the pages know about a learner's progress. */
 export type ProgressState = {
   lessons: LessonProgress[];
+  bookmarkedCourses: CourseBookmark[];
   lastLessonSlug: string | null;
   lastActiveAt: string | null;
+  /** The one thing the notification feed stores. See `lib/notifications.ts`. */
+  notificationsReadAt: string | null;
 };
 
 /** What a signed-out visitor gets: a valid, empty state rather than an error. */
 export const EMPTY_PROGRESS: ProgressState = {
   lessons: [],
+  bookmarkedCourses: [],
   lastLessonSlug: null,
   lastActiveAt: null,
+  notificationsReadAt: null,
 };
+
+/** The longest note the app will store. Enforced on the server and in the editor. */
+export const MAX_NOTE_LENGTH = 5_000;
 
 /**
  * The document id for a learner. The one derived id in the schema, and it is
@@ -59,6 +96,35 @@ export function completedLessonIds(progress: ProgressState): Set<string> {
 /** A lesson id to its state, for the resume position and the "in progress" mark. */
 export function lessonProgressById(progress: ProgressState): Map<string, LessonProgress> {
   return new Map(progress.lessons.map((lesson) => [lesson.lessonId, lesson]));
+}
+
+/**
+ * The lessons a learner has saved for later, newest bookmark first.
+ *
+ * Ordered by when they were bookmarked rather than by curriculum position: a
+ * bookmark list is a reading queue, not a syllabus.
+ */
+export function bookmarkedLessons(progress: ProgressState): LessonProgress[] {
+  return progress.lessons
+    .filter((lesson) => lesson.bookmarked)
+    .sort((a, b) => (b.bookmarkedAt ?? "").localeCompare(a.bookmarkedAt ?? ""));
+}
+
+/** The courses a learner has saved, newest bookmark first. */
+export function bookmarkedCourses(progress: ProgressState): CourseBookmark[] {
+  return [...progress.bookmarkedCourses].sort((a, b) =>
+    (b.bookmarkedAt ?? "").localeCompare(a.bookmarkedAt ?? ""),
+  );
+}
+
+/** The saved course ids, as a set for the course hero's toggle state. */
+export function bookmarkedCourseIds(progress: ProgressState): Set<string> {
+  return new Set(progress.bookmarkedCourses.map((course) => course.courseId));
+}
+
+/** How many lessons the learner has written a note on, for the My Learning summary. */
+export function noteCount(progress: ProgressState): number {
+  return progress.lessons.filter((lesson) => (lesson.note ?? "").trim().length > 0).length;
 }
 
 export type CourseProgressSummary = {

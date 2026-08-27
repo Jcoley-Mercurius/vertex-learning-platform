@@ -36,14 +36,37 @@ export async function readProgress(userId: string): Promise<ProgressState> {
             {
               lessonId: lesson.lessonId,
               lessonSlug: lesson.lessonSlug ?? null,
+              lessonTitle: lesson.lessonTitle ?? null,
+              lessonDurationSeconds: lesson.lessonDurationSeconds ?? 0,
               completed: lesson.completed ?? false,
               positionSeconds: lesson.positionSeconds ?? 0,
+              bookmarked: lesson.bookmarked ?? false,
+              bookmarkedAt: lesson.bookmarkedAt ?? null,
+              note: lesson.note ?? null,
+              noteUpdatedAt: lesson.noteUpdatedAt ?? null,
+              completedAt: lesson.completedAt ?? null,
               updatedAt: lesson.updatedAt ?? null,
+            },
+          ]
+        : [],
+    ),
+    /* Same shape as the lessons above: the query drops entries whose reference
+       no longer resolves, and this filter is for a course deleted between the
+       two. */
+    bookmarkedCourses: (data.bookmarkedCourses ?? []).flatMap((course) =>
+      course.courseId
+        ? [
+            {
+              courseId: course.courseId,
+              courseTitle: course.courseTitle ?? null,
+              courseSlug: course.courseSlug ?? null,
+              bookmarkedAt: course.bookmarkedAt ?? null,
             },
           ]
         : [],
     ),
     lastLessonSlug: data.lastLessonSlug ?? null,
     lastActiveAt: data.lastActiveAt ?? null,
+    notificationsReadAt: data.notificationsReadAt ?? null,
   };
 }

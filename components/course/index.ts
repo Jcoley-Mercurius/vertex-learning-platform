@@ -1,4 +1,5 @@
 export { CourseHero } from "./course-hero";
+export { CourseBookmarkButton } from "./course-bookmark-button";
 export { LearningOutcomes, type LearningOutcome } from "./learning-outcomes";
 export {
   CourseCurriculum,

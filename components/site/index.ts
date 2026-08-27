@@ -1,4 +1,5 @@
 export { SiteHeader } from "./site-header";
+export { NotificationsBell } from "./notifications-bell";
 export { CourseGlyph, type CourseGlyphName } from "./course-glyph";
 export { AccentBars } from "./accent-bars";
 export { PostHogIdentify } from "./posthog-identify";

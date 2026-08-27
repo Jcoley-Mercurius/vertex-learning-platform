@@ -14,6 +14,7 @@ import { useAuth } from "@clerk/nextjs";
 
 import {
   EMPTY_PROGRESS,
+  bookmarkedCourseIds,
   completedLessonIds,
   lessonProgressById,
   type LessonProgress,
@@ -39,11 +40,24 @@ type ProgressContextValue = {
   signedIn: boolean;
   completed: Set<string>;
   byLesson: Map<string, LessonProgress>;
-  /** Records a position, and optionally a completion, for one lesson. */
+  /** The courses the learner has saved, for the course hero's toggle. */
+  bookmarkedCourses: Set<string>;
+  /**
+   * Records one lesson's state. Every field but the id is optional and *absent
+   * means unchanged*, so the player, the bookmark and the notes editor can each
+   * write their own field without disturbing the others.
+   */
   save: (update: {
     lessonId: string;
     positionSeconds?: number;
     completed?: boolean;
+    bookmarked?: boolean;
+    note?: string;
+  }) => Promise<void>;
+  /** Saves or clears a course bookmark. Same route, different array. */
+  saveCourseBookmark: (update: {
+    courseId: string;
+    bookmarked: boolean;
   }) => Promise<void>;
 };
 
@@ -96,24 +110,37 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
    * server is still the authority: its response replaces the optimistic value.
    */
   const save = useCallback<ProgressContextValue["save"]>(
-    async ({ lessonId, positionSeconds = 0, completed = false }) => {
+    async ({ lessonId, positionSeconds, completed = false, bookmarked, note }) => {
       if (!isSignedIn) return;
+
+      const now = new Date().toISOString();
 
       setFetched((current) => {
         const state = current ?? EMPTY_PROGRESS;
         const rest = state.lessons.filter((lesson) => lesson.lessonId !== lessonId);
         const previous = state.lessons.find((lesson) => lesson.lessonId === lessonId);
+        const trimmed = note?.trim() ?? null;
+        const nextBookmarked = bookmarked ?? previous?.bookmarked ?? false;
 
         return {
           ...state,
+          /* Mirrors the server's merge: anything this call left out keeps the
+             value it already had. */
           lessons: [
             ...rest,
             {
               lessonId,
               lessonSlug: previous?.lessonSlug ?? null,
+              lessonTitle: previous?.lessonTitle ?? null,
+              lessonDurationSeconds: previous?.lessonDurationSeconds ?? 0,
               completed: completed || (previous?.completed ?? false),
-              positionSeconds,
-              updatedAt: new Date().toISOString(),
+              positionSeconds: positionSeconds ?? previous?.positionSeconds ?? 0,
+              bookmarked: nextBookmarked,
+              bookmarkedAt: nextBookmarked ? (previous?.bookmarkedAt ?? now) : null,
+              note: note === undefined ? (previous?.note ?? null) : trimmed || null,
+              noteUpdatedAt: note === undefined ? (previous?.noteUpdatedAt ?? null) : now,
+              completedAt: previous?.completedAt ?? (completed ? now : null),
+              updatedAt: now,
             },
           ],
         };
@@ -123,7 +150,13 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
         await fetch("/api/progress", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ lessonId, positionSeconds, completed }),
+          body: JSON.stringify({
+            lessonId,
+            completed,
+            ...(positionSeconds === undefined ? {} : { positionSeconds }),
+            ...(bookmarked === undefined ? {} : { bookmarked }),
+            ...(note === undefined ? {} : { note }),
+          }),
           /* The last write of a visit goes out during `pagehide`, when a normal
              fetch would be cancelled with the document. */
           keepalive: true,
@@ -136,15 +169,59 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
     [isSignedIn],
   );
 
+  /** The course-level twin of `save`, mirrored locally the same way. */
+  const saveCourseBookmark = useCallback<ProgressContextValue["saveCourseBookmark"]>(
+    async ({ courseId, bookmarked }) => {
+      if (!isSignedIn) return;
+
+      const now = new Date().toISOString();
+
+      setFetched((current) => {
+        const state = current ?? EMPTY_PROGRESS;
+        const rest = state.bookmarkedCourses.filter((course) => course.courseId !== courseId);
+        const previous = state.bookmarkedCourses.find((course) => course.courseId === courseId);
+
+        return {
+          ...state,
+          bookmarkedCourses: bookmarked
+            ? [
+                ...rest,
+                {
+                  courseId,
+                  courseTitle: previous?.courseTitle ?? null,
+                  courseSlug: previous?.courseSlug ?? null,
+                  bookmarkedAt: previous?.bookmarkedAt ?? now,
+                },
+              ]
+            : rest,
+        };
+      });
+
+      try {
+        await fetch("/api/progress", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ courseId, bookmarked }),
+          keepalive: true,
+        });
+      } catch {
+        /* As with a progress write: not worth interrupting the learner for. */
+      }
+    },
+    [isSignedIn],
+  );
+
   const value = useMemo<ProgressContextValue>(
     () => ({
       loaded,
       signedIn: Boolean(isSignedIn),
       completed: completedLessonIds(progress),
       byLesson: lessonProgressById(progress),
+      bookmarkedCourses: bookmarkedCourseIds(progress),
       save,
+      saveCourseBookmark,
     }),
-    [isSignedIn, loaded, progress, save],
+    [isSignedIn, loaded, progress, save, saveCourseBookmark],
   );
 
   return <ProgressContext.Provider value={value}>{children}</ProgressContext.Provider>;
@@ -164,7 +241,9 @@ export function useProgress(): ProgressContextValue {
       signedIn: false,
       completed: new Set<string>(),
       byLesson: new Map<string, LessonProgress>(),
+      bookmarkedCourses: new Set<string>(),
       save: async () => {},
+      saveCourseBookmark: async () => {},
     }
   );
 }

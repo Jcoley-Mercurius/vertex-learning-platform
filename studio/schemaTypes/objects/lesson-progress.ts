@@ -35,6 +35,36 @@ export const lessonProgress = defineType({
       validation: (rule) => rule.min(0),
     }),
     defineField({
+      name: 'bookmarked',
+      title: 'Bookmarked',
+      description: 'The learner saved this lesson for later. Surfaced on My Learning.',
+      type: 'boolean',
+      initialValue: false,
+      readOnly: true,
+    }),
+    defineField({
+      name: 'bookmarkedAt',
+      title: 'Bookmarked at',
+      description: 'Set on the transition to bookmarked, and cleared when it is removed.',
+      type: 'datetime',
+      readOnly: true,
+    }),
+    defineField({
+      name: 'note',
+      title: 'Personal note',
+      description:
+        "The learner's own note for this lesson. Plain text app state, not authored content, and capped at 5000 characters by the route that writes it.",
+      type: 'text',
+      rows: 5,
+      readOnly: true,
+    }),
+    defineField({
+      name: 'noteUpdatedAt',
+      title: 'Note updated at',
+      type: 'datetime',
+      readOnly: true,
+    }),
+    defineField({
       name: 'completedAt',
       type: 'datetime',
       readOnly: true,
@@ -46,10 +76,21 @@ export const lessonProgress = defineType({
     }),
   ],
   preview: {
-    select: {title: 'lesson.title', completed: 'completed', position: 'positionSeconds'},
-    prepare: ({title, completed, position}) => ({
-      title: title || 'Unknown lesson',
-      subtitle: completed ? 'Completed' : `At ${Math.floor((position ?? 0) / 60)}m`,
-    }),
+    select: {
+      title: 'lesson.title',
+      completed: 'completed',
+      position: 'positionSeconds',
+      bookmarked: 'bookmarked',
+      note: 'note',
+    },
+    prepare: ({title, completed, position, bookmarked, note}) => {
+      const state = completed ? 'Completed' : `At ${Math.floor((position ?? 0) / 60)}m`
+      const flags = [bookmarked ? 'bookmarked' : null, note ? 'noted' : null].filter(Boolean)
+
+      return {
+        title: title || 'Unknown lesson',
+        subtitle: flags.length > 0 ? `${state} · ${flags.join(' · ')}` : state,
+      }
+    },
   },
 })

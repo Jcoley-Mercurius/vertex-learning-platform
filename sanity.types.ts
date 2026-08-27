@@ -70,6 +70,19 @@ export type VideoChapter = {
   label?: string;
 };
 
+export type CourseReference = {
+  _ref: string;
+  _type: "reference";
+  _weak?: boolean;
+  [internalGroqTypeReferenceTo]?: "course";
+};
+
+export type CourseBookmark = {
+  _type: "courseBookmark";
+  course?: CourseReference;
+  bookmarkedAt?: string;
+};
+
 export type LessonReference = {
   _ref: string;
   _type: "reference";
@@ -82,6 +95,10 @@ export type LessonProgress = {
   lesson?: LessonReference;
   completed?: boolean;
   positionSeconds?: number;
+  bookmarked?: boolean;
+  bookmarkedAt?: string;
+  note?: string;
+  noteUpdatedAt?: string;
   completedAt?: string;
   updatedAt?: string;
 };
@@ -145,8 +162,14 @@ export type Progress = {
       _key: string;
     } & LessonProgress
   >;
+  bookmarkedCourses?: Array<
+    {
+      _key: string;
+    } & CourseBookmark
+  >;
   lastLesson?: LessonReference;
   lastActiveAt?: string;
+  notificationsReadAt?: string;
 };
 
 export type Video = {
@@ -419,6 +442,8 @@ export type AllSanitySchemaTypes =
   | BlockContent
   | VideoChunk
   | VideoChapter
+  | CourseReference
+  | CourseBookmark
   | LessonReference
   | LessonProgress
   | Resource
@@ -1132,15 +1157,29 @@ export type CATEGORY_SLUGS_QUERY_RESULT = Array<string | null>;
 
 // Source: ../sanity/lib/queries.ts
 // Variable: PROGRESS_BY_USER_QUERY
-// Query: *[_type == "progress" && userId == $userId][0] {    lastActiveAt,    "lastLessonSlug": lastLesson->slug.current,    "lessons": lessons[defined(lesson->_id)] {      "lessonId": lesson->_id,      "lessonSlug": lesson->slug.current,      "completed": coalesce(completed, false),      "positionSeconds": coalesce(positionSeconds, 0),      updatedAt    }  }
+// Query: *[_type == "progress" && userId == $userId][0] {    lastActiveAt,    notificationsReadAt,    "lastLessonSlug": lastLesson->slug.current,    "bookmarkedCourses": bookmarkedCourses[defined(course->_id)] {      "courseId": course->_id,      "courseTitle": course->title,      "courseSlug": course->slug.current,      bookmarkedAt    },    "lessons": lessons[defined(lesson->_id)] {      "lessonId": lesson->_id,      "lessonSlug": lesson->slug.current,      "lessonTitle": lesson->title,      "lessonDurationSeconds": coalesce(lesson->durationSeconds, 0),      "completed": coalesce(completed, false),      "positionSeconds": coalesce(positionSeconds, 0),      "bookmarked": coalesce(bookmarked, false),      bookmarkedAt,      note,      noteUpdatedAt,      completedAt,      updatedAt    }  }
 export type PROGRESS_BY_USER_QUERY_RESULT = {
   lastActiveAt: string | null;
+  notificationsReadAt: string | null;
   lastLessonSlug: string | null;
+  bookmarkedCourses: Array<{
+    courseId: string | null;
+    courseTitle: string | null;
+    courseSlug: string | null;
+    bookmarkedAt: string | null;
+  }> | null;
   lessons: Array<{
     lessonId: string | null;
     lessonSlug: string | null;
+    lessonTitle: string | null;
+    lessonDurationSeconds: number | 0;
     completed: boolean | false;
     positionSeconds: number | 0;
+    bookmarked: boolean | false;
+    bookmarkedAt: string | null;
+    note: string | null;
+    noteUpdatedAt: string | null;
+    completedAt: string | null;
     updatedAt: string | null;
   }> | null;
 } | null;
@@ -1175,6 +1214,42 @@ export type MY_LEARNING_QUERY_RESULT = Array<{
   moduleCount: number | 0;
   lessonCount: number | 0;
   durationSeconds: number | 0;
+}>;
+
+// Source: ../sanity/lib/queries.ts
+// Variable: COURSE_FOR_BOOKMARK_QUERY
+// Query: *[_type == "course" && _id == $id][0] {    _id,    title  }
+export type COURSE_FOR_BOOKMARK_QUERY_RESULT = {
+  _id: string;
+  title: string | null;
+} | null;
+
+// Source: ../sanity/lib/queries.ts
+// Variable: NOTIFICATIONS_CATALOG_QUERY
+// Query: *[_type == "course" && defined(slug.current)] | order(_createdAt desc) [0...40] {    _id,    _createdAt,    title,    "slug": slug.current,    glyph,    "lessons": modules[].lessons[]-> {      _id,      _createdAt,      title,      "slug": slug.current    }  }
+export type NOTIFICATIONS_CATALOG_QUERY_RESULT = Array<{
+  _id: string;
+  _createdAt: string;
+  title: string | null;
+  slug: string | null;
+  glyph:
+    | "docker"
+    | "llm"
+    | "nextjs"
+    | "postgres"
+    | "python"
+    | "rag"
+    | "react"
+    | "security"
+    | "system-design"
+    | "typescript"
+    | null;
+  lessons: Array<{
+    _id: string;
+    _createdAt: string;
+    title: string | null;
+    slug: string | null;
+  } | null> | null;
 }>;
 
 // Source: ../sanity/lib/queries.ts
@@ -1270,8 +1345,10 @@ declare module "@sanity/client" {
     '\n  *[_type == "instructor" && slug.current == $slug][0] {\n    \n  _id,\n  name,\n  "slug": slug.current,\n  title,\n  photo { \n  ...,\n  asset->{\n    _id,\n    url,\n    metadata { lqip, dimensions }\n  }\n }\n,\n    expertise,\n    bio[]{\n  ...{\n    ...,\n    markDefs[]{\n      ...,\n      _type == "link" => { href }\n    },\n    _type == "image" => {\n      ...,\n      asset->{\n        _id,\n        url,\n        metadata { lqip, dimensions }\n      }\n    }\n  }\n},\n    "courses": *[_type == "course" && defined(slug.current) && references(^._id)]\n      | order(popular desc, title asc) {\n      \n  _id,\n  "lessonIds": modules[].lessons[]._ref,\n  title,\n  "slug": slug.current,\n  summary,\n  glyph,\n  level,\n  price,\n  popular,\n  studentCount,\n  coverImage { \n  ...,\n  asset->{\n    _id,\n    url,\n    metadata { lqip, dimensions }\n  }\n },\n  category->{ _id, title, "slug": slug.current },\n  instructor->{ \n  _id,\n  name,\n  "slug": slug.current,\n  title,\n  photo { \n  ...,\n  asset->{\n    _id,\n    url,\n    metadata { lqip, dimensions }\n  }\n }\n },\n  \n  "moduleCount": coalesce(count(modules), 0),\n  "lessonCount": coalesce(count(modules[].lessons[]), 0),\n  "durationSeconds": coalesce(math::sum(modules[].lessons[]->durationSeconds), 0)\n\n\n    }\n  }\n': INSTRUCTOR_BY_SLUG_QUERY_RESULT;
     '\n  *[_type == "category" && defined(slug.current)] | order(title asc) {\n    _id,\n    title,\n    "slug": slug.current,\n    description,\n    "courseCount": count(*[_type == "course" && references(^._id)])\n  }\n': CATEGORIES_QUERY_RESULT;
     '\n  *[_type == "category" && defined(slug.current)].slug.current\n': CATEGORY_SLUGS_QUERY_RESULT;
-    '\n  *[_type == "progress" && userId == $userId][0] {\n    lastActiveAt,\n    "lastLessonSlug": lastLesson->slug.current,\n    "lessons": lessons[defined(lesson->_id)] {\n      "lessonId": lesson->_id,\n      "lessonSlug": lesson->slug.current,\n      "completed": coalesce(completed, false),\n      "positionSeconds": coalesce(positionSeconds, 0),\n      updatedAt\n    }\n  }\n': PROGRESS_BY_USER_QUERY_RESULT;
+    '\n  *[_type == "progress" && userId == $userId][0] {\n    lastActiveAt,\n    notificationsReadAt,\n    "lastLessonSlug": lastLesson->slug.current,\n    "bookmarkedCourses": bookmarkedCourses[defined(course->_id)] {\n      "courseId": course->_id,\n      "courseTitle": course->title,\n      "courseSlug": course->slug.current,\n      bookmarkedAt\n    },\n    "lessons": lessons[defined(lesson->_id)] {\n      "lessonId": lesson->_id,\n      "lessonSlug": lesson->slug.current,\n      "lessonTitle": lesson->title,\n      "lessonDurationSeconds": coalesce(lesson->durationSeconds, 0),\n      "completed": coalesce(completed, false),\n      "positionSeconds": coalesce(positionSeconds, 0),\n      "bookmarked": coalesce(bookmarked, false),\n      bookmarkedAt,\n      note,\n      noteUpdatedAt,\n      completedAt,\n      updatedAt\n    }\n  }\n': PROGRESS_BY_USER_QUERY_RESULT;
     '\n  *[_type == "course" && defined(slug.current)]\n  | order(popular desc, title asc) {\n    _id,\n    title,\n    "slug": slug.current,\n    summary,\n    glyph,\n    level,\n    "lessons": modules[].lessons[]-> {\n      _id,\n      title,\n      "slug": slug.current,\n      durationSeconds\n    },\n    \n  "moduleCount": coalesce(count(modules), 0),\n  "lessonCount": coalesce(count(modules[].lessons[]), 0),\n  "durationSeconds": coalesce(math::sum(modules[].lessons[]->durationSeconds), 0)\n\n  }\n': MY_LEARNING_QUERY_RESULT;
+    '\n  *[_type == "course" && _id == $id][0] {\n    _id,\n    title\n  }\n': COURSE_FOR_BOOKMARK_QUERY_RESULT;
+    '\n  *[_type == "course" && defined(slug.current)] | order(_createdAt desc) [0...40] {\n    _id,\n    _createdAt,\n    title,\n    "slug": slug.current,\n    glyph,\n    "lessons": modules[].lessons[]-> {\n      _id,\n      _createdAt,\n      title,\n      "slug": slug.current\n    }\n  }\n': NOTIFICATIONS_CATALOG_QUERY_RESULT;
     '\n  *[_type == "lesson" && _id == $id][0] {\n    _id,\n    title,\n    durationSeconds,\n    "courseTitle": *[_type == "course" && references(^._id)] | order(_id asc) [0].title\n  }\n': LESSON_FOR_PROGRESS_QUERY_RESULT;
     '\n  *[_type == "lesson" && _id in $ids] {\n    _id,\n    title,\n    "slug": slug.current,\n    durationSeconds,\n    freePreview,\n    keyPoints,\n    poster { \n  ...,\n  asset->{\n    _id,\n    url,\n    metadata { lqip, dimensions }\n  }\n },\n    "course": *[_type == "course" && references(^._id)] | order(_id asc) [0] {\n      _id,\n      title,\n      "slug": slug.current,\n      glyph,\n      modules[] {\n        _key,\n        title,\n        "lessonIds": lessons[]._ref\n      }\n    }\n  }\n': SEARCH_LESSONS_BY_IDS_QUERY_RESULT;
     '\n  *[_type == "lesson" && _id in $ids] {\n    _id,\n    durationSeconds,\n    "video": *[_type == "video" && url == ^.videoUrl][0] {\n      "runtimeSeconds": durationSeconds,\n      "chapters": chapters[] { startSeconds, label },\n      "matchedChunks": chunks[\n        text match $t0 ||\n        text match $t1 ||\n        text match $t2 ||\n        text match $t3 ||\n        text match $t4 ||\n        text match $t5\n      ][0...3] { startSeconds, text }\n    }\n  }\n': SEARCH_VIDEO_MOMENTS_QUERY_RESULT;

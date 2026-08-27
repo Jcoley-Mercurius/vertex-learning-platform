@@ -3,10 +3,10 @@ import { auth } from "@clerk/nextjs/server";
 import { z } from "zod";
 
 import { captureServerEvent, captureServerException, resolveIdentity } from "@/lib/analytics";
-import { EMPTY_PROGRESS, isClerkUserId, progressDocId } from "@/lib/progress";
+import { EMPTY_PROGRESS, MAX_NOTE_LENGTH, isClerkUserId, progressDocId } from "@/lib/progress";
 import { readProgress } from "@/lib/progress-server";
 import { getWriteClient } from "@/sanity/lib/write-client";
-import { LESSON_FOR_PROGRESS_QUERY } from "@/sanity/lib/queries";
+import { COURSE_FOR_BOOKMARK_QUERY, LESSON_FOR_PROGRESS_QUERY } from "@/sanity/lib/queries";
 
 /**
  * Learner progress: the only write in the app (AGENTS.md section 5).
@@ -51,18 +51,48 @@ function checkRateLimit(identifier: string): boolean {
   return true;
 }
 
+/** Note length as a coarse bucket. The note text is never captured. */
+function noteLengthBucket(length: number): string {
+  if (length === 0) return "empty";
+  if (length < 200) return "short";
+  if (length < 1_000) return "medium";
+  return "long";
+}
+
 /**
  * `strict()` is what stops a body patching fields it has no business in: an
  * unexpected key is a 400, not a silently ignored extra. `positionSeconds` is
  * bounded again below against the lesson's real duration.
+ *
+ * Every field but `lessonId` is optional, and *absent means unchanged*: the
+ * player writes a position, the bookmark writes a flag, the notes editor writes
+ * text, and none of them may disturb the others (see the merge below).
  */
-const progressBodySchema = z
+const lessonBodySchema = z
   .object({
     lessonId: z.string().min(1).max(128),
     positionSeconds: z.number().finite().min(0).max(86_400).optional(),
     completed: z.boolean().optional(),
+    bookmarked: z.boolean().optional(),
+    /* Plain text, capped here as well as in the editor. An empty string is a
+       deliberate "clear my note", not a missing field. */
+    note: z.string().max(MAX_NOTE_LENGTH).optional(),
   })
   .strict();
+
+/**
+ * The course hero's Bookmark. A course bookmark carries no position and no
+ * completion — a course is not a lesson — so it is its own body shape rather
+ * than more optional fields on the one above.
+ */
+const courseBodySchema = z
+  .object({
+    courseId: z.string().min(1).max(128),
+    bookmarked: z.boolean(),
+  })
+  .strict();
+
+const progressBodySchema = z.union([lessonBodySchema, courseBodySchema]);
 
 /**
  * A signed-out caller gets an empty state and a 200, not a 401. The provider
@@ -109,8 +139,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid progress update." }, { status: 400 });
   }
 
-  const { lessonId, completed = false } = parsed.data;
   const identity = await resolveIdentity(request);
+
+  /* A course bookmark writes a different array on the same document, so it
+     branches here rather than threading a "kind" through the lesson path. */
+  if ("courseId" in parsed.data) {
+    return saveCourseBookmark(userId, parsed.data, identity);
+  }
+
+  const { lessonId, completed = false } = parsed.data;
+  /* A write that only moves the position must not clear a bookmark or a note,
+     and a write that only saves a note must not rewind the player. */
+  const touchesPosition = parsed.data.positionSeconds !== undefined;
+  const touchesBookmark = parsed.data.bookmarked !== undefined;
+  const touchesNote = parsed.data.note !== undefined;
 
   try {
     const client = getWriteClient();
@@ -137,24 +179,49 @@ export async function POST(request: Request) {
        decides two things: whether this write is the transition to complete (so
        `lesson_completed` fires once, not on every replay), and whether the
        entry has to be appended or patched in place. */
-    const previous = await client.fetch<{ completed: boolean } | null>(
+    const previous = await client.fetch<{
+      completed: boolean;
+      positionSeconds: number;
+      bookmarked: boolean;
+      bookmarkedAt: string | null;
+      note: string | null;
+      noteUpdatedAt: string | null;
+      completedAt: string | null;
+    } | null>(
       /* groq */ `*[_id == $docId][0].lessons[_key == $lessonId][0]{
-        "completed": coalesce(completed, false)
+        "completed": coalesce(completed, false),
+        "positionSeconds": coalesce(positionSeconds, 0),
+        "bookmarked": coalesce(bookmarked, false),
+        "bookmarkedAt": bookmarkedAt,
+        "note": note,
+        "noteUpdatedAt": noteUpdatedAt,
+        "completedAt": completedAt
       }`,
       { docId, lessonId },
     );
 
     const exists = previous !== null;
     const wasCompleted = previous?.completed ?? false;
+    const wasBookmarked = previous?.bookmarked ?? false;
+    const bookmarked = touchesBookmark ? parsed.data.bookmarked! : wasBookmarked;
+    const note = touchesNote ? parsed.data.note!.trim() : (previous?.note ?? null);
 
+    /* The whole entry is rewritten on every write, so anything this request did
+       not touch has to be carried over from `previous` explicitly. */
     const entry = {
       _key: lessonId,
       _type: "lessonProgress",
       lesson: { _type: "reference", _ref: lessonId },
       completed: completed || wasCompleted,
-      positionSeconds,
+      positionSeconds: touchesPosition ? positionSeconds : (previous?.positionSeconds ?? 0),
+      bookmarked,
+      /* Set when the bookmark goes on, dropped when it comes off — so the
+         "still on your bookmarks" nudge dates from the save, not the lesson. */
+      bookmarkedAt: bookmarked ? (previous?.bookmarkedAt ?? now) : null,
+      note: note ? note : null,
+      noteUpdatedAt: touchesNote ? now : (previous?.noteUpdatedAt ?? null),
       /* A completion timestamp is set once and never moved by a re-watch. */
-      ...(completed && !wasCompleted ? { completedAt: now } : {}),
+      completedAt: completed && !wasCompleted ? now : (previous?.completedAt ?? null),
       updatedAt: now,
     };
 
@@ -185,6 +252,30 @@ export async function POST(request: Request) {
       })
       .commit();
 
+    if (touchesBookmark && bookmarked !== wasBookmarked) {
+      await captureServerEvent(
+        identity,
+        bookmarked ? "lesson_bookmarked" : "lesson_unbookmarked",
+        {
+          lesson_id: lessonId,
+          lesson_title: lesson.title ?? null,
+          course_title: lesson.courseTitle ?? null,
+        },
+      );
+    }
+
+    if (touchesNote) {
+      /* The note itself never leaves the server. Its length, bucketed, is all
+         the signal the engagement question needs. */
+      await captureServerEvent(identity, "lesson_note_saved", {
+        lesson_id: lessonId,
+        lesson_title: lesson.title ?? null,
+        course_title: lesson.courseTitle ?? null,
+        note_length_bucket: noteLengthBucket((note ?? "").length),
+        cleared: (note ?? "").length === 0,
+      });
+    }
+
     if (completed && !wasCompleted) {
       await captureServerEvent(identity, "lesson_completed", {
         lesson_id: lessonId,
@@ -194,11 +285,95 @@ export async function POST(request: Request) {
       });
     }
 
-    return NextResponse.json({ ok: true, lessonId, completed: entry.completed, positionSeconds });
+    return NextResponse.json({
+      ok: true,
+      lessonId,
+      completed: entry.completed,
+      positionSeconds: entry.positionSeconds,
+      bookmarked: entry.bookmarked,
+      bookmarkedAt: entry.bookmarkedAt,
+      note: entry.note,
+      noteUpdatedAt: entry.noteUpdatedAt,
+    });
   } catch (error) {
     console.error("Progress write failed", error);
     await captureServerException(identity, error);
 
     return NextResponse.json({ error: "Could not save your progress." }, { status: 500 });
+  }
+}
+
+/**
+ * Saves or clears a course bookmark.
+ *
+ * The same upsert shape as a lesson write — deterministic document id, one
+ * transaction, a keyed array member — against `bookmarkedCourses` instead of
+ * `lessons`. Unbookmarking removes the member outright rather than leaving a
+ * tombstone: there is nothing else on it worth keeping.
+ */
+async function saveCourseBookmark(
+  userId: string,
+  { courseId, bookmarked }: { courseId: string; bookmarked: boolean },
+  identity: Awaited<ReturnType<typeof resolveIdentity>>,
+) {
+  try {
+    const client = getWriteClient();
+
+    /* The course has to be a real published course before anything is written,
+       for the same reason a lesson does: no id in the array that resolves to
+       nothing. */
+    const course = await client.fetch(COURSE_FOR_BOOKMARK_QUERY, { id: courseId });
+
+    if (!course?._id) {
+      return NextResponse.json({ error: "Unknown course." }, { status: 404 });
+    }
+
+    const docId = progressDocId(userId);
+    const now = new Date().toISOString();
+
+    const transaction = client.transaction().createIfNotExists({
+      _id: docId,
+      _type: "progress",
+      userId,
+      lessons: [],
+    });
+
+    if (bookmarked) {
+      transaction.patch(docId, (patch) =>
+        patch
+          .setIfMissing({ bookmarkedCourses: [] })
+          /* Appending a `_key` that is already there would duplicate it, so an
+             unset of the same key runs first: the pair is idempotent, which is
+             what a double-clicked toggle needs. */
+          .unset([`bookmarkedCourses[_key=="${courseId}"]`])
+          .insert("after", "bookmarkedCourses[-1]", [
+            {
+              _key: courseId,
+              _type: "courseBookmark",
+              course: { _type: "reference", _ref: courseId },
+              bookmarkedAt: now,
+            },
+          ]),
+      );
+    } else {
+      transaction.patch(docId, (patch) =>
+        patch.unset([`bookmarkedCourses[_key=="${courseId}"]`]),
+      );
+    }
+
+    await transaction.commit();
+
+    await captureServerEvent(
+      identity,
+      bookmarked ? "course_bookmarked" : "course_unbookmarked",
+      { course_id: courseId, course_title: course.title ?? null },
+    );
+
+    return NextResponse.json({ ok: true, courseId, bookmarked });
+  } catch (error) {
+    console.error("Course bookmark write failed", error);
+    await captureServerException(identity, error);
+
+    return NextResponse.json({ error: "Could not save your bookmark." }, { status: 500 });
   }
 }
