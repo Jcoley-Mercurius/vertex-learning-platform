@@ -1331,8 +1331,7 @@ export type SEARCH_VIDEO_MOMENTS_QUERY_RESULT = Array<{
 }>;
 
 // Query TypeMap
-import "@sanity/client";
-declare module "@sanity/client" {
+declare global {
   interface SanityQueries {
     '\n  *[_type == "course" && defined(slug.current)]\n  | order(popular desc, title asc) {\n    \n  _id,\n  "lessonIds": modules[].lessons[]._ref,\n  title,\n  "slug": slug.current,\n  summary,\n  glyph,\n  level,\n  price,\n  popular,\n  studentCount,\n  coverImage { \n  ...,\n  asset->{\n    _id,\n    url,\n    metadata { lqip, dimensions }\n  }\n },\n  category->{ _id, title, "slug": slug.current },\n  instructor->{ \n  _id,\n  name,\n  "slug": slug.current,\n  title,\n  photo { \n  ...,\n  asset->{\n    _id,\n    url,\n    metadata { lqip, dimensions }\n  }\n }\n },\n  \n  "moduleCount": coalesce(count(modules), 0),\n  "lessonCount": coalesce(count(modules[].lessons[]), 0),\n  "durationSeconds": coalesce(math::sum(modules[].lessons[]->durationSeconds), 0)\n\n\n  }\n': COURSES_CATALOG_QUERY_RESULT;
     '\n  *[_type == "course" && defined(slug.current)].slug.current\n': COURSE_SLUGS_QUERY_RESULT;
@@ -1353,4 +1352,8 @@ declare module "@sanity/client" {
     '\n  *[_type == "lesson" && _id in $ids] {\n    _id,\n    title,\n    "slug": slug.current,\n    durationSeconds,\n    freePreview,\n    keyPoints,\n    poster { \n  ...,\n  asset->{\n    _id,\n    url,\n    metadata { lqip, dimensions }\n  }\n },\n    "course": *[_type == "course" && references(^._id)] | order(_id asc) [0] {\n      _id,\n      title,\n      "slug": slug.current,\n      glyph,\n      modules[] {\n        _key,\n        title,\n        "lessonIds": lessons[]._ref\n      }\n    }\n  }\n': SEARCH_LESSONS_BY_IDS_QUERY_RESULT;
     '\n  *[_type == "lesson" && _id in $ids] {\n    _id,\n    durationSeconds,\n    "video": *[_type == "video" && url == ^.videoUrl][0] {\n      "runtimeSeconds": durationSeconds,\n      "chapters": chapters[] { startSeconds, label },\n      "matchedChunks": chunks[\n        text match $t0 ||\n        text match $t1 ||\n        text match $t2 ||\n        text match $t3 ||\n        text match $t4 ||\n        text match $t5\n      ][0...3] { startSeconds, text }\n    }\n  }\n': SEARCH_VIDEO_MOMENTS_QUERY_RESULT;
   }
+}
+// Lets @sanity/client releases that predate the global registry read it too
+declare module "@sanity/client" {
+  interface SanityQueries extends globalThis.SanityQueries {}
 }
