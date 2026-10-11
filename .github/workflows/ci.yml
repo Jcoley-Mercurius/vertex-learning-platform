@@ -1,0 +1,27 @@
+# Type check and lint on every push to main and every pull request.
+# No `next build` here: the build reads the private dataset and needs secrets.
+# Vercel builds each pull request as a preview deploy and reports that check.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # Route and layout types (LayoutProps, PageProps) are generated, not committed.
+      - run: npx next typegen
+      - run: npx tsc --noEmit
+      - run: npm run lint
