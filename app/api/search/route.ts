@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { unstable_cache } from "next/cache";
 import { NoOutputGeneratedError, Output, generateText, stepCountIs } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { auth } from "@clerk/nextjs/server";
@@ -11,6 +12,7 @@ import {
 } from "@/lib/analytics";
 import { createSearchMcpClient, fetchInitialContext } from "@/lib/search/mcp";
 import { buildSystemPrompt } from "@/lib/search/prompt";
+import { refundSearch, reserveSearch, searchEnabled } from "@/lib/search/quota";
 import { resolveMoments, type MomentStats } from "@/lib/search/timestamps";
 import {
   MAX_QUERY_LENGTH,
@@ -63,9 +65,9 @@ function reserveLastStepForOutput({ stepNumber }: { stepNumber: number }) {
 const REQUEST_TIMEOUT_MS = 60_000;
 
 /**
- * In-memory rate limiting: 10 searches per user per minute. Resets on server
- * restart, which is acceptable for a learning platform where billed search abuse
- * is the concern, not production-grade rate control.
+ * In-memory burst limiting: 10 searches per user per minute, per instance. It
+ * only blunts a flood against one warm instance; the real spend guard is the
+ * durable daily quota in `lib/search/quota.ts`.
  */
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_WINDOW_MS = 60_000;
@@ -93,6 +95,15 @@ const MODEL = "gpt-5";
 
 export async function POST(request: Request) {
   const startedAt = Date.now();
+
+  // The kill switch runs before anything else, so a paused search costs nothing.
+  if (!searchEnabled()) {
+    return NextResponse.json(
+      { error: "Search is paused right now. Browse the full catalog in the meantime." },
+      { status: 503 },
+    );
+  }
+
   const identity = await resolveIdentity(request);
 
   // Require authentication before processing any search request.
@@ -138,66 +149,34 @@ export async function POST(request: Request) {
     );
   }
 
-  let mcpClient: Awaited<ReturnType<typeof createSearchMcpClient>> | undefined;
+  /* Counted before the model runs, so concurrent searches cannot all slip in
+     under the limit. A cache hit is handed back below. */
+  const reservation = await reserveSearch(userId);
+
+  if (!reservation.ok) {
+    await captureServerEvent(identity, "search_quota_exceeded", { scope: reservation.scope });
+
+    return NextResponse.json(
+      {
+        error:
+          reservation.scope === "user"
+            ? "You've reached today's search limit. It resets at midnight UTC."
+            : "Search has hit its daily limit for everyone. Please try again tomorrow.",
+      },
+      { status: 429 },
+    );
+  }
 
   try {
-    const clientPromise = createSearchMcpClient();
-    const contextPromise = fetchInitialContext();
+    const { response, momentStats, computedAt } = await runCachedSearch(normalizeQuery(query));
+    const cached = computedAt < startedAt;
 
-    // Assign mcpClient as soon as it resolves, before awaiting context fetch,
-    // so it remains reachable for cleanup even if context fetch fails.
-    mcpClient = await clientPromise;
-    const initialContext = await contextPromise;
-
-    // The schema is already in the system prompt, so the tool that fetches it
-    // would only burn a turn and duplicate the payload.
-    const tools = Object.fromEntries(
-      Object.entries(await mcpClient.tools()).filter(
-        ([name]) => name !== "initial_context",
-      ),
-    );
-
-    const result = await generateText({
-      model: openai(MODEL),
-      system: buildSystemPrompt(initialContext),
-      prompt: query,
-      tools,
-      stopWhen: stepCountIs(MAX_STEPS),
-      prepareStep: reserveLastStepForOutput,
-      output: Output.object({
-        schema: searchOutputSchema,
-        name: "search_results",
-        description: "The ranked lessons that answer the learner's query.",
-      }),
-      // Search is an interactive page, so latency is a feature. At the default
-      // reasoning effort this query took minutes; at 'low' it takes ~20s with no
-      // loss in result quality, because the ranking work is in the GROQ the model
-      // writes rather than in extended deliberation.
-      providerOptions: { openai: { reasoningEffort: "low", textVerbosity: "low" } },
-      abortSignal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-
-    // The tool loop can reach the step cap before the model emits its
-    // `search_results` object. Only a clean "stop" finish carries that object;
-    // reading `result.output` after any other finish throws
-    // AI_NoOutputGeneratedError. A capped run degrades to an empty result set
-    // plus the agent's last reply, never a 502.
-    if (result.finishReason !== "stop") {
-      await captureServerEvent(identity, "search_failed", {
-        query_length: query.length,
-        reason: "no_output",
-        duration_ms: Date.now() - startedAt,
-      });
-
-      return NextResponse.json({
-        results: [],
-        resultCount: 0,
-        courseCount: 0,
-        reply: result.text || null,
-      } satisfies SearchResponse);
+    // An answer from the cache cost nothing, so it does not count.
+    if (cached) {
+      await refundSearch(userId, reservation.docId).catch((error) =>
+        console.error("Search quota refund failed", error),
+      );
     }
-
-    const { response, momentStats } = await buildResponse(result.output, query);
 
     await captureServerEvent(identity, "search_performed", {
       query: analyticsText(query),
@@ -209,6 +188,7 @@ export async function POST(request: Request) {
       has_results: response.resultCount > 0,
       duration_ms: Date.now() - startedAt,
       model: MODEL,
+      cached,
       /* How the timestamps on those video cards were arrived at. A high
          `moments_dropped` means the model is proposing seconds the dataset does
          not contain, which is exactly what the resolver exists to catch. */
@@ -221,6 +201,24 @@ export async function POST(request: Request) {
 
     return NextResponse.json(response);
   } catch (error) {
+    // The tool loop can reach the step cap before the model emits its
+    // `search_results` object. That run is not cached, and it degrades to an
+    // empty result set plus the agent's last reply, never a 502.
+    if (error instanceof IncompleteSearchError) {
+      await captureServerEvent(identity, "search_failed", {
+        query_length: query.length,
+        reason: "no_output",
+        duration_ms: Date.now() - startedAt,
+      });
+
+      return NextResponse.json({
+        results: [],
+        resultCount: 0,
+        courseCount: 0,
+        reply: error.reply,
+      } satisfies SearchResponse);
+    }
+
     console.error("Search failed", error);
 
     // The query text is deliberately left off a failure: a search that never ran
@@ -236,10 +234,85 @@ export async function POST(request: Request) {
       { error: "Search is unavailable right now. Please try again." },
       { status: 502 },
     );
-  } finally {
-    await mcpClient?.close().catch(() => {});
   }
 }
+
+/** Thrown out of the cached run so an incomplete answer is never cached. */
+class IncompleteSearchError extends Error {
+  constructor(readonly reply: string | null) {
+    super("Search finished without structured output");
+    this.name = "IncompleteSearchError";
+  }
+}
+
+/** Case and spacing never change the answer, so they never split the cache. */
+function normalizeQuery(query: string) {
+  return query.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+/**
+ * The billed part of a search — MCP, model, and the Sanity read-back — cached
+ * per normalized query for a day. Cards are built only from shared catalog
+ * content, never from anything per learner, so one learner's answer is safe to
+ * serve to the next. A run that throws is not cached.
+ */
+const runCachedSearch = unstable_cache(
+  async (query: string) => {
+    let mcpClient: Awaited<ReturnType<typeof createSearchMcpClient>> | undefined;
+
+    try {
+      const clientPromise = createSearchMcpClient();
+      const contextPromise = fetchInitialContext();
+
+      // Assign mcpClient as soon as it resolves, before awaiting context fetch,
+      // so it remains reachable for cleanup even if context fetch fails.
+      mcpClient = await clientPromise;
+      const initialContext = await contextPromise;
+
+      // The schema is already in the system prompt, so the tool that fetches it
+      // would only burn a turn and duplicate the payload.
+      const tools = Object.fromEntries(
+        Object.entries(await mcpClient.tools()).filter(
+          ([name]) => name !== "initial_context",
+        ),
+      );
+
+      const result = await generateText({
+        model: openai(MODEL),
+        system: buildSystemPrompt(initialContext),
+        prompt: query,
+        tools,
+        stopWhen: stepCountIs(MAX_STEPS),
+        prepareStep: reserveLastStepForOutput,
+        output: Output.object({
+          schema: searchOutputSchema,
+          name: "search_results",
+          description: "The ranked lessons that answer the learner's query.",
+        }),
+        // Search is an interactive page, so latency is a feature. At the default
+        // reasoning effort this query took minutes; at 'low' it takes ~20s with no
+        // loss in result quality, because the ranking work is in the GROQ the model
+        // writes rather than in extended deliberation.
+        providerOptions: { openai: { reasoningEffort: "low", textVerbosity: "low" } },
+        abortSignal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+
+      // Only a clean "stop" finish carries the `search_results` object; reading
+      // `result.output` after any other finish throws AI_NoOutputGeneratedError.
+      if (result.finishReason !== "stop") {
+        throw new IncompleteSearchError(result.text || null);
+      }
+
+      const { response, momentStats } = await buildResponse(result.output, query);
+
+      return { response, momentStats, computedAt: Date.now() };
+    } finally {
+      await mcpClient?.close().catch(() => {});
+    }
+  },
+  ["search-v1"],
+  { revalidate: 86_400, tags: ["search"] },
+);
 
 /** How many of the returned cards are of one kind. */
 function countKind(response: SearchResponse, kind: SearchResult["kind"]) {

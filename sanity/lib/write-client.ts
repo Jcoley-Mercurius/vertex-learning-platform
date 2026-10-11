@@ -13,7 +13,8 @@ import { getWriteToken } from './write-token'
  * read that came from the CDN could still be the copy from before the learner
  * finished the lesson they are looking at.
  *
- * Only `app/api/progress/route.ts` may import this.
+ * Only `app/api/progress/route.ts` and the search quota (`lib/search/quota.ts`)
+ * may import this.
  */
 export function getWriteClient() {
   return createClient({
