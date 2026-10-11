@@ -1,15 +1,18 @@
-import { Badge, Icon, cn } from "@/components/ui";
+import { BookmarkButton } from "./bookmark-button";
+import { Badge, Icon } from "@/components/ui";
 import { formatCount, formatDuration, formatLevel } from "@/lib/format";
 
 /**
  * The head of the lesson column from `design/vertex-lesson.png`: the positional
  * lesson label, the title, the summary and the meta row, with the bookmark
- * square pinned to the right.
+ * toggle pinned to the right.
  *
  * Every number is derived or stored — the label comes from array position
  * (AGENTS.md section 7), never from a field.
  */
 export function LessonHero({
+  lessonId,
+  courseTitle,
   label,
   title,
   summary,
@@ -18,6 +21,8 @@ export function LessonHero({
   studentCount,
   freePreview,
 }: {
+  lessonId: string;
+  courseTitle: string;
   label: string;
   title: string;
   summary: string | null;
@@ -58,18 +63,9 @@ export function LessonHero({
           ) : null}
         </div>
 
-        {/* Presentational, like the notifications bell: bookmarks have no backend. */}
-        <button
-          type="button"
-          aria-label="Bookmark this lesson"
-          className={cn(
-            "mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-neutral-200 bg-white",
-            "text-primary-500 transition-colors hover:bg-primary-100",
-            "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-400",
-          )}
-        >
-          <Icon name="bookmark" size={20} />
-        </button>
+        {/* The one interactive element in this header, and the only client
+            component on it: everything else here is server-rendered. */}
+        <BookmarkButton lessonId={lessonId} lessonTitle={title} courseTitle={courseTitle} />
       </div>
 
       <ul className="mt-7 flex flex-wrap items-center gap-x-7 gap-y-3 text-body text-neutral-500">

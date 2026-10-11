@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CourseBookmarkButton } from "./course-bookmark-button";
 import { CourseGlyph, type CourseGlyphName } from "@/components/site";
 import { Badge, Icon, buttonClassName } from "@/components/ui";
 import { formatCount, formatDuration, formatLevel, pluralize } from "@/lib/format";
@@ -9,6 +10,7 @@ import { formatCount, formatDuration, formatLevel, pluralize } from "@/lib/forma
  * derived from the curriculum, never stored (AGENTS.md section 7).
  */
 export function CourseHero({
+  courseId,
   title,
   summary,
   glyph,
@@ -20,6 +22,7 @@ export function CourseHero({
   primaryHref,
   primaryLabel,
 }: {
+  courseId: string;
   title: string;
   summary: string | null;
   glyph: CourseGlyphName | null;
@@ -91,14 +94,9 @@ export function CourseHero({
             </Link>
           ) : null}
 
-          {/* Presentational, like the notifications bell: bookmarks have no backend. */}
-          <button
-            type="button"
-            className={buttonClassName({ variant: "tertiary", size: "cta" })}
-          >
-            <Icon name="bookmark" size={20} />
-            Bookmark
-          </button>
+          {/* The one interactive element in this hero, and the only client
+              component on it. */}
+          <CourseBookmarkButton courseId={courseId} courseTitle={title} />
         </div>
       </div>
     </section>

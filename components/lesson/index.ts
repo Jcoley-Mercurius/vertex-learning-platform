@@ -1,4 +1,6 @@
 export { LessonHero } from "./lesson-hero";
+export { BookmarkButton } from "./bookmark-button";
+export { LessonNotes } from "./lesson-notes";
 export { LessonPlayer } from "./lesson-player";
 export {
   LessonSidebar,

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
-import { Icon, Logo, buttonClassName, cn } from "@/components/ui";
+import { NotificationsBell } from "./notifications-bell";
+import { Logo, buttonClassName, cn } from "@/components/ui";
 
 const links = [
   { label: "Courses", href: "/courses" },
@@ -12,9 +13,9 @@ const focusRing =
 
 /**
  * The site header from the home reference: logo, primary links, notification bell,
- * and the account controls. The bell is presentational for now — notifications have
- * no backend. The avatar slot holds Clerk's UserButton when signed in, and the sign
- * in / sign up buttons when signed out.
+ * and the account controls. The bell is the one client island here; it fetches the
+ * learner's derived feed only when there is a session. The avatar slot holds Clerk's
+ * UserButton when signed in, and the sign in / sign up buttons when signed out.
  */
 export function SiteHeader() {
   return (
@@ -43,16 +44,7 @@ export function SiteHeader() {
         </nav>
 
         <div className="ml-auto flex items-center gap-5">
-          <button
-            type="button"
-            aria-label="Notifications"
-            className={cn(
-              focusRing,
-              "text-neutral-900 transition-colors hover:text-primary-500",
-            )}
-          >
-            <Icon name="bell" size={24} />
-          </button>
+          <NotificationsBell />
 
           <Show when="signed-out">
             <div className="flex flex-shrink-0 items-center gap-3">

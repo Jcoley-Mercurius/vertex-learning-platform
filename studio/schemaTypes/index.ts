@@ -7,6 +7,7 @@ import {lesson} from './documents/lesson'
 import {progress} from './documents/progress'
 import {video, videoChapter, videoChunk} from './documents/video'
 import {blockContent} from './objects/block-content'
+import {courseBookmark} from './objects/course-bookmark'
 import {learningOutcome} from './objects/learning-outcome'
 import {lessonProgress} from './objects/lesson-progress'
 import {module} from './objects/module'
@@ -27,6 +28,7 @@ export const schema: {types: SchemaTypeDefinition[]} = {
     learningOutcome,
     resource,
     lessonProgress,
+    courseBookmark,
     videoChapter,
     videoChunk,
     blockContent,

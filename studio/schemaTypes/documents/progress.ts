@@ -42,6 +42,13 @@ export const progress = defineType({
       of: [defineArrayMember({type: 'lessonProgress'})],
     }),
     defineField({
+      name: 'bookmarkedCourses',
+      title: 'Bookmarked courses',
+      description: 'Courses saved from the course hero. `_key` is the course id.',
+      type: 'array',
+      of: [defineArrayMember({type: 'courseBookmark'})],
+    }),
+    defineField({
       name: 'lastLesson',
       title: 'Last lesson',
       description: 'Where the learner was most recently. Drives the resume affordance.',
@@ -50,6 +57,13 @@ export const progress = defineType({
     }),
     defineField({
       name: 'lastActiveAt',
+      type: 'datetime',
+    }),
+    defineField({
+      name: 'notificationsReadAt',
+      title: 'Notifications read at',
+      description:
+        'The only thing the notification feed stores. Every notification is derived per request; this timestamp is what makes one of them unread.',
       type: 'datetime',
     }),
   ],

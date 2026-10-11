@@ -3,6 +3,7 @@
 import { useId, useState, type ReactNode } from "react";
 import posthog from "posthog-js";
 
+import { LessonNotes } from "./lesson-notes";
 import { cn } from "@/components/ui";
 
 type TabId = "content" | "notes";
@@ -12,15 +13,17 @@ type TabId = "content" | "notes";
  * both panels are rendered on the server and passed in as props, so the notes
  * Portable Text never ships as data to the browser.
  *
- * The Notes tab is presentational (AGENTS.md section 7) — personal notes have
- * no backend, so it shows an empty state rather than an input that pretends to
- * save.
+ * The Notes tab holds the learner's own notes, which are per-learner app state
+ * rather than content: it hydrates from the progress provider and autosaves
+ * through `/api/progress`.
  */
 export function LessonTabs({
   content,
+  lessonId,
   lessonTitle,
 }: {
   content: ReactNode;
+  lessonId: string;
   lessonTitle: string;
 }) {
   const baseId = useId();
@@ -79,14 +82,8 @@ export function LessonTabs({
         id={`${baseId}-notes-panel`}
         aria-labelledby={`${baseId}-notes-tab`}
         hidden={active !== "notes"}
-        className="py-10"
       >
-        <p className="text-body-lg text-neutral-700">
-          Your own notes for this lesson will appear here.
-        </p>
-        <p className="mt-2 text-body text-neutral-500">
-          Note taking is not available yet.
-        </p>
+        <LessonNotes lessonId={lessonId} lessonTitle={lessonTitle} />
       </div>
     </section>
   );

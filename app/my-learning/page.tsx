@@ -2,15 +2,25 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { auth } from "@clerk/nextjs/server";
 
-import { LearningCourseCard, LearningSummary, type LearningCourse } from "@/components/my-learning";
+import {
+  BookmarkedLessons,
+  LearningCourseCard,
+  LearningSummary,
+  type BookmarkedCourse,
+  type BookmarkedLesson,
+  type LearningCourse,
+} from "@/components/my-learning";
 import { SiteHeader, ViewTracker, type CourseGlyphName } from "@/components/site";
 import { Icon, buttonClassName } from "@/components/ui";
 import { formatDuration, pluralize } from "@/lib/format";
 import {
   EMPTY_PROGRESS,
+  bookmarkedCourses,
+  bookmarkedLessons,
   completedLessonIds,
   courseProgress,
   lessonProgressById,
+  noteCount,
   resumeLessonIndex,
   watchedSeconds,
 } from "@/lib/progress";
@@ -102,6 +112,37 @@ export default async function MyLearningPage() {
   const finished = scored.filter((item) => item.summary.finished);
   const notStarted = scored.filter((item) => !item.summary.started);
 
+  /* Which course a bookmarked lesson belongs to. The progress record knows the
+     lesson but not its course — a lesson does not store its parent (AGENTS.md
+     section 8) — so it is read back out of the curriculum walk above. */
+  const courseTitleByLesson = new Map<string, string>();
+
+  for (const item of scored) {
+    for (const lesson of item.lessons) {
+      if (!courseTitleByLesson.has(lesson._id)) {
+        courseTitleByLesson.set(lesson._id, item.card.title);
+      }
+    }
+  }
+
+  const bookmarks: BookmarkedLesson[] = bookmarkedLessons(progress).map((lesson) => ({
+    lessonId: lesson.lessonId,
+    title: lesson.lessonTitle ?? "Untitled lesson",
+    href: lesson.lessonSlug ? `/lessons/${lesson.lessonSlug}` : null,
+    courseTitle: courseTitleByLesson.get(lesson.lessonId) ?? null,
+    durationSeconds: lesson.lessonDurationSeconds,
+    completed: lesson.completed,
+    hasNote: (lesson.note ?? "").trim().length > 0,
+  }));
+
+  const courseBookmarks: BookmarkedCourse[] = bookmarkedCourses(progress).map((course) => ({
+    courseId: course.courseId,
+    title: course.courseTitle ?? "Untitled course",
+    href: course.courseSlug ? `/courses/${course.courseSlug}` : null,
+  }));
+
+  const notesWritten = noteCount(progress);
+
   const lessonsCompleted = completed.size;
   const byLesson = lessonProgressById(progress);
   const secondsWatched = watchedSeconds(
@@ -154,8 +195,30 @@ export default async function MyLearningPage() {
                   label: "Time watched",
                   value: formatDuration(secondsWatched),
                 },
+                ...(bookmarks.length + courseBookmarks.length > 0
+                  ? [
+                      {
+                        icon: "bookmark" as const,
+                        label: "Bookmarked",
+                        value: pluralize(bookmarks.length + courseBookmarks.length, "item"),
+                      },
+                    ]
+                  : []),
+                ...(notesWritten > 0
+                  ? [
+                      {
+                        icon: "file-text" as const,
+                        label: "Notes",
+                        value: pluralize(notesWritten, "lesson"),
+                      },
+                    ]
+                  : []),
               ]}
             />
+          ) : null}
+
+          {bookmarks.length > 0 || courseBookmarks.length > 0 ? (
+            <BookmarkedLessons courses={courseBookmarks} lessons={bookmarks} />
           ) : null}
 
           {inProgress.length > 0 ? (

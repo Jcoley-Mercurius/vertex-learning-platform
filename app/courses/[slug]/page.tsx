@@ -120,6 +120,7 @@ export default async function CoursePage({ params }: PageProps<"/courses/[slug]"
           />
 
           <CourseHero
+            courseId={course._id}
             title={title}
             summary={course.summary}
             glyph={course.glyph}
