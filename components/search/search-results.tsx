@@ -39,7 +39,9 @@ const sorts = {
 type Sort = keyof typeof sorts;
 
 type State =
-  | { status: "idle" | "loading" | "error" }
+  | { status: "idle" | "loading" }
+  /* `message` is the route's own explanation (sign in, daily limit, paused). */
+  | { status: "error"; message?: string }
   | { status: "done"; data: SearchResponse };
 
 /** The correlation headers posthog-js gives us, when it has been initialised. */
@@ -89,7 +91,15 @@ export function SearchResults({ query }: { query: string }) {
           signal: controller.signal,
         });
 
-        if (!response.ok) throw new Error(String(response.status));
+        if (!response.ok) {
+          const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
+          if (controller.signal.aborted) return;
+          setState({
+            status: "error",
+            message: typeof body?.error === "string" ? body.error : undefined,
+          });
+          return;
+        }
 
         const data = (await response.json()) as SearchResponse;
         setState({ status: "done", data });
@@ -131,7 +141,7 @@ export function SearchResults({ query }: { query: string }) {
       {state.status === "error" ? (
         <div className="mt-12 text-center">
           <p className="text-body-lg text-neutral-700">
-            Search is unavailable right now.
+            {state.message ?? "Search is unavailable right now."}
           </p>
           <Button
             variant="secondary"
