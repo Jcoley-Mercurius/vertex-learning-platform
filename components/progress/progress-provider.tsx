@@ -68,6 +68,8 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
   const [fetched, setFetched] = useState<ProgressState | null>(null);
   /* Guards React's development double mount and any re-render of the provider. */
   const requested = useRef(false);
+  /* Monotonically increasing revision for ordering concurrent progress writes. */
+  const clientRevision = useRef(0);
 
   /* Signing out is handled here rather than by resetting state in an effect: the
      marks belong to the session, so a provider with no session simply has none. */
@@ -114,6 +116,10 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
       if (!isSignedIn) return;
 
       const now = new Date().toISOString();
+      /* Seeded from the clock, not from zero, so a fresh page load still
+         outranks the revision a previous visit stored. */
+      clientRevision.current = Math.max(clientRevision.current + 1, Date.now());
+      const revision = clientRevision.current;
 
       setFetched((current) => {
         const state = current ?? EMPTY_PROGRESS;
@@ -147,12 +153,13 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
       });
 
       try {
-        await fetch("/api/progress", {
+        const response = await fetch("/api/progress", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             lessonId,
             completed,
+            clientRevision: revision,
             ...(positionSeconds === undefined ? {} : { positionSeconds }),
             ...(bookmarked === undefined ? {} : { bookmarked }),
             ...(note === undefined ? {} : { note }),
@@ -161,9 +168,18 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
              fetch would be cancelled with the document. */
           keepalive: true,
         });
+
+        if (!response.ok) {
+          // On error, reconcile with server state
+          const freshProgress = await fetch("/api/progress").then((r) =>
+            r.ok ? r.json() : EMPTY_PROGRESS,
+          );
+          setFetched(freshProgress);
+        }
       } catch {
         /* A dropped progress write is not worth interrupting the learner for;
-           the next tick writes the same position again. */
+           the next tick writes the same position again. On actual network errors,
+           we don't reconcile since we can't reach the server anyway. */
       }
     },
     [isSignedIn],

@@ -67,6 +67,9 @@ function noteLengthBucket(length: number): string {
  * Every field but `lessonId` is optional, and *absent means unchanged*: the
  * player writes a position, the bookmark writes a flag, the notes editor writes
  * text, and none of them may disturb the others (see the merge below).
+ *
+ * `clientRevision` is a monotonically increasing number from the client that
+ * orders position writes, so a stale autosave cannot rewind a newer one.
  */
 const lessonBodySchema = z
   .object({
@@ -77,6 +80,7 @@ const lessonBodySchema = z
     /* Plain text, capped here as well as in the editor. An empty string is a
        deliberate "clear my note", not a missing field. */
     note: z.string().max(MAX_NOTE_LENGTH).optional(),
+    clientRevision: z.number().int().min(0).optional(),
   })
   .strict();
 
@@ -147,7 +151,8 @@ export async function POST(request: Request) {
     return saveCourseBookmark(userId, parsed.data, identity);
   }
 
-  const { lessonId, completed = false } = parsed.data;
+  const lessonBody = parsed.data;
+  const { lessonId, completed = false, clientRevision } = lessonBody;
   /* A write that only moves the position must not clear a bookmark or a note,
      and a write that only saves a note must not rewind the player. */
   const touchesPosition = parsed.data.positionSeconds !== undefined;
@@ -178,79 +183,140 @@ export async function POST(request: Request) {
     /* The learner's existing entry for this lesson, read before the patch. It
        decides two things: whether this write is the transition to complete (so
        `lesson_completed` fires once, not on every replay), and whether the
-       entry has to be appended or patched in place. */
-    const previous = await client.fetch<{
-      completed: boolean;
-      positionSeconds: number;
-      bookmarked: boolean;
-      bookmarkedAt: string | null;
-      note: string | null;
-      noteUpdatedAt: string | null;
-      completedAt: string | null;
-    } | null>(
-      /* groq */ `*[_id == $docId][0].lessons[_key == $lessonId][0]{
-        "completed": coalesce(completed, false),
-        "positionSeconds": coalesce(positionSeconds, 0),
-        "bookmarked": coalesce(bookmarked, false),
-        "bookmarkedAt": bookmarkedAt,
-        "note": note,
-        "noteUpdatedAt": noteUpdatedAt,
-        "completedAt": completedAt
-      }`,
-      { docId, lessonId },
-    );
+       entry has to be appended or patched in place.
 
-    const exists = previous !== null;
-    const wasCompleted = previous?.completed ?? false;
-    const wasBookmarked = previous?.bookmarked ?? false;
-    const bookmarked = touchesBookmark ? parsed.data.bookmarked! : wasBookmarked;
-    const note = touchesNote ? parsed.data.note!.trim() : (previous?.note ?? null);
+       The document revision is read alongside it for optimistic concurrency:
+       the write below is conditional on that revision, so two concurrent writers
+       cannot both append the same lesson, and a loser re-reads and retries. */
+    const readState = () =>
+      client.fetch<{
+        _rev: string;
+        lessonEntry: {
+          completed: boolean;
+          positionSeconds: number;
+          bookmarked: boolean;
+          bookmarkedAt: string | null;
+          note: string | null;
+          noteUpdatedAt: string | null;
+          completedAt: string | null;
+          clientRevision: number | null;
+        } | null;
+      } | null>(
+        /* groq */ `*[_id == $docId][0]{
+          _rev,
+          "lessonEntry": lessons[_key == $lessonId][0]{
+            "completed": coalesce(completed, false),
+            "positionSeconds": coalesce(positionSeconds, 0),
+            "bookmarked": coalesce(bookmarked, false),
+            "bookmarkedAt": bookmarkedAt,
+            "note": note,
+            "noteUpdatedAt": noteUpdatedAt,
+            "completedAt": completedAt,
+            clientRevision
+          }
+        }`,
+        { docId, lessonId },
+      );
+
+    /* `clientRevision` orders the player's position writes, so a late
+       autosave cannot rewind a newer one. Only a pure position/completion write
+       is dropped as stale: a bookmark or note is a deliberate action and is
+       never thrown away for arriving out of order. */
+    const positionOnly = !touchesBookmark && !touchesNote;
+    const isStale = (stored: number | null | undefined) =>
+      positionOnly && clientRevision !== undefined && (stored ?? 0) > clientRevision;
+
+    let state = await readState();
+    const initial = state?.lessonEntry ?? null;
+    const wasCompleted = initial?.completed ?? false;
+    const wasBookmarked = initial?.bookmarked ?? false;
+
+    if (isStale(initial?.clientRevision)) {
+      return NextResponse.json({ ok: false, lessonId, error: "Stale write rejected" }, { status: 409 });
+    }
 
     /* The whole entry is rewritten on every write, so anything this request did
        not touch has to be carried over from `previous` explicitly. */
-    const entry = {
-      _key: lessonId,
-      _type: "lessonProgress",
-      lesson: { _type: "reference", _ref: lessonId },
-      completed: completed || wasCompleted,
-      positionSeconds: touchesPosition ? positionSeconds : (previous?.positionSeconds ?? 0),
-      bookmarked,
-      /* Set when the bookmark goes on, dropped when it comes off — so the
-         "still on your bookmarks" nudge dates from the save, not the lesson. */
-      bookmarkedAt: bookmarked ? (previous?.bookmarkedAt ?? now) : null,
-      note: note ? note : null,
-      noteUpdatedAt: touchesNote ? now : (previous?.noteUpdatedAt ?? null),
-      /* A completion timestamp is set once and never moved by a re-watch. */
-      completedAt: completed && !wasCompleted ? now : (previous?.completedAt ?? null),
-      updatedAt: now,
+    const buildEntry = (previous: typeof initial) => {
+      const bookmarked = touchesBookmark ? lessonBody.bookmarked! : (previous?.bookmarked ?? false);
+      const note = touchesNote ? lessonBody.note!.trim() : (previous?.note ?? null);
+      const priorCompleted = previous?.completed ?? false;
+
+      return {
+        _key: lessonId,
+        _type: "lessonProgress",
+        lesson: { _type: "reference", _ref: lessonId },
+        completed: completed || priorCompleted,
+        positionSeconds: touchesPosition ? positionSeconds : (previous?.positionSeconds ?? 0),
+        bookmarked,
+        /* Set when the bookmark goes on, dropped when it comes off — so the
+           "still on your bookmarks" nudge dates from the save, not the lesson. */
+        bookmarkedAt: bookmarked ? (previous?.bookmarkedAt ?? now) : null,
+        note: note ? note : null,
+        noteUpdatedAt: touchesNote ? now : (previous?.noteUpdatedAt ?? null),
+        /* A completion timestamp is set once and never moved by a re-watch. */
+        completedAt: completed && !priorCompleted ? now : (previous?.completedAt ?? null),
+        clientRevision: Math.max(clientRevision ?? 0, previous?.clientRevision ?? 0),
+        updatedAt: now,
+      };
     };
 
     /* One transaction: create the record if this is the learner's first lesson,
-       then patch it. The deterministic document id is what makes this an upsert
-       with no read-then-write race on the document itself.
+       then patch it. A keyed patch of an absent `_key` is a silent no-op in
+       Sanity rather than an error, so the first write for a lesson has to append
+       instead. The patch is conditional on the revision just read; on a 409 the
+       whole flow (read, decide, write) runs again, up to a few times. */
+    const MAX_RETRIES = 3;
+    let entry = buildEntry(initial);
 
-       A keyed patch of an absent `_key` is a silent no-op in Sanity rather than
-       an error, so the first write for a lesson has to append instead — which is
-       what `exists` above is for. */
-    await client
-      .transaction()
-      .createIfNotExists({
-        _id: docId,
-        _type: "progress",
-        userId,
-        lessons: [],
-      })
-      .patch(docId, (patch) => {
-        const base = patch.setIfMissing({ lessons: [] }).set({
-          lastLesson: { _type: "reference", _ref: lessonId },
-          lastActiveAt: now,
-        });
+    for (let attempt = 0; ; attempt += 1) {
+      const previous = state?.lessonEntry ?? null;
+      const revision = state?._rev ?? null;
+      entry = buildEntry(previous);
 
-        return exists
-          ? base.set({ [`lessons[_key=="${lessonId}"]`]: entry })
-          : base.insert("after", "lessons[-1]", [entry]);
-      })
-      .commit();
+      try {
+        await client
+          .transaction()
+          .createIfNotExists({
+            _id: docId,
+            _type: "progress",
+            userId,
+            lessons: [],
+          })
+          .patch(docId, (patch) => {
+            const base = patch.setIfMissing({ lessons: [] }).set({
+              lastLesson: { _type: "reference", _ref: lessonId },
+              lastActiveAt: now,
+            });
+            const guarded = revision ? base.ifRevisionId(revision) : base;
+
+            return previous
+              ? guarded.set({ [`lessons[_key=="${lessonId}"]`]: entry })
+              : guarded.insert("after", "lessons[-1]", [entry]);
+          })
+          .commit();
+        break;
+      } catch (error: unknown) {
+        const isConflict =
+          typeof error === "object" &&
+          error !== null &&
+          "statusCode" in error &&
+          error.statusCode === 409;
+
+        if (!isConflict || attempt >= MAX_RETRIES) throw error;
+
+        state = await readState();
+
+        if (isStale(state?.lessonEntry?.clientRevision)) {
+          return NextResponse.json(
+            { ok: false, lessonId, error: "Stale write rejected after retry" },
+            { status: 409 },
+          );
+        }
+      }
+    }
+
+    const { bookmarked, note } = entry;
 
     if (touchesBookmark && bookmarked !== wasBookmarked) {
       await captureServerEvent(

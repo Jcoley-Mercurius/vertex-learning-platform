@@ -144,9 +144,11 @@ export default async function MyLearningPage() {
   const notesWritten = noteCount(progress);
 
   const lessonsCompleted = completed.size;
+  const byLesson = lessonProgressById(progress);
   const secondsWatched = watchedSeconds(
     scored.flatMap((item) => item.lessons),
     completed,
+    byLesson,
   );
 
   const hasProgress = inProgress.length > 0 || finished.length > 0;
